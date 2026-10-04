@@ -3,8 +3,8 @@ name: Build Executable
 on:
   push:
     tags:
-      - 'v*' # Chạy tự động khi bạn tạo tag mới (ví dụ: v1.0.0)
-  workflow_dispatch: # Cho phép bấm nút Build thủ công trên giao diện GitHub
+      - 'v*' # Chạy tự động khi tạo tag mới (ví dụ: v1.0.0)
+  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên web GitHub
 
 jobs:
   build-windows:
@@ -26,13 +26,13 @@ jobs:
 
     - name: Build EXE with PyInstaller
       run: |
-        pyinstaller --noconsole --onefile --name="RF_Design_Tool" rf.py
+        pyinstaller --noconsole --onefile --name="RF_Design_Tool" RF.py
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: RF_Design_Tool_Windows
-        path: dist/rf.exe
+        path: dist/RF_Design_Tool.exe
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
