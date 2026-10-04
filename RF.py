@@ -335,7 +335,7 @@ class RFDesignApp(tk.Tk):
                     # Tilt Calculation
                     # Standard M-Tilt = 2
                     m_tilt = 2.0
-                    ant_height = float(cell_row.get('Antenna Height', 30.0))
+                    ant_height = float(cell_row.get('Height', 30.0))
                     
                     # Target coverage distance = 2/3 distance to nearest neighbor site
                     d_coverage = (2.0 / 3.0) * nearest_site_dist
