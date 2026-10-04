@@ -49,7 +49,7 @@ def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, 
     - Nằm trong dải quy định của Sector.
     - Tránh hướng ngắm đối diện (face-to-face) với các cell lân cận.
     """
-    default_azimuths = [30, 120, 240]
+    default_azimuths = [0, 120, 240]
     best_azimuth = default_azimuths[sector_idx]
     max_score = -1e9
 
