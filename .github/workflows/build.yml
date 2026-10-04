@@ -1,0 +1,43 @@
+name: Build Executable
+
+on:
+  push:
+    tags:
+      - 'v*' # Chạy tự động khi bạn tạo tag mới (ví dụ: v1.0.0)
+  workflow_dispatch: # Cho phép bấm nút Build thủ công trên giao diện GitHub
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --noconsole --onefile --name="RF_Design_Tool" rf.py
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: RF_Design_Tool_Windows
+        path: dist/rf.exe
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/RF_Design_Tool.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
