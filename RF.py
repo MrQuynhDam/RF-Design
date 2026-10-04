@@ -157,7 +157,7 @@ class RFDesignApp(tk.Tk):
         self.btn_run.pack(side=tk.LEFT, padx=5)
 
         self.progress_bar = ttk.Progressbar(action_frame, orient="horizontal", mode="determinate")
-        self.progress_bar.pack(side=tk.FILL, expand=True, padx=10)
+       self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=10)
 
         # 4. Log Output Section
         log_frame = ttk.LabelFrame(main_frame, text=" Process Execution Logs ", padding="10")
