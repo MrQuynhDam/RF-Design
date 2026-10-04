@@ -98,7 +98,7 @@ def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, 
 class RFDesignApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Ericsson 4G LTE RF Design & Optimization Tool")
+        self.title("LTE RF Design Tool")
         self.geometry("900x700")
         self.minsize(800, 600)
 
@@ -114,7 +114,7 @@ class RFDesignApp(tk.Tk):
         header_frame.pack(fill=tk.X, side=tk.TOP)
         header_label = tk.Label(
             header_frame, 
-            text="ERICSSON 4G RF DESIGN AUTOMATION", 
+            text="LTE RF DESIGN AUTOMATION", 
             font=("Helvetica", 14, "bold"), 
             fg="white", 
             bg="#003366"
@@ -142,11 +142,11 @@ class RFDesignApp(tk.Tk):
         param_frame.pack(fill=tk.X, pady=5)
 
         ttk.Label(param_frame, text="PCI Reuse Distance Range (m):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.pci_range_var = tk.StringVar(value="10000")
+        self.pci_range_var = tk.StringVar(value="8000")
         ttk.Entry(param_frame, textvariable=self.pci_range_var, width=15).grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
 
         ttk.Label(param_frame, text="RSI Reuse Distance Range (m):").grid(row=0, column=2, sticky=tk.W, padx=15, pady=5)
-        self.rsi_range_var = tk.StringVar(value="15000")
+        self.rsi_range_var = tk.StringVar(value="8000")
         ttk.Entry(param_frame, textvariable=self.rsi_range_var, width=15).grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
 
         # 3. Action & Progress Section
