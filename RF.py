@@ -43,11 +43,12 @@ def is_azimuth_in_sector(azimuth, sector_idx):
         return 180 <= azimuth <= 300
     return False
 
-def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, neighbor_azimuths, sector_idx):
+def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, neighbor_azimuths, sector_idx, assigned_site_azimuths=[]):
     """
     Tìm Azimuth tối ưu cho Cell:
     - Nằm trong dải quy định của Sector.
     - Tránh hướng ngắm đối diện (face-to-face) với các cell lân cận.
+    - Đảm bảo độ lệch góc với các cell đã gán trong cùng site >= 90 độ.
     """
     default_azimuths = [0, 120, 240]
     best_azimuth = default_azimuths[sector_idx]
@@ -61,27 +62,39 @@ def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, 
     else:
         candidates = list(range(180, 305, 5))
 
+    # Lọc các candidate thỏa mãn độ lệch góc >= 90 độ so với các cell đã gán trong cùng site
+    valid_candidates = []
+    for az in candidates:
+        valid = True
+        for prev_az in assigned_site_azimuths:
+            diff = np.abs((az - prev_az + 180) % 360 - 180)
+            if diff < 90:  # Khoảng cách góc tối thiểu 90 độ
+                valid = False
+                break
+        if valid:
+            valid_candidates.append(az)
+
+    # Nếu không có candidate nào thỏa mãn >= 90 độ, lấy lại danh sách gốc
+    if len(valid_candidates) == 0:
+        valid_candidates = candidates
+
     if len(neighbor_lats) == 0:
-        return best_azimuth
+        # Chọn candidate gần nhất với góc mặc định
+        return min(valid_candidates, key=lambda x: np.abs((x - best_azimuth + 180) % 360 - 180))
 
     # Tọa độ vector các lân cận
     dlat = np.radians(neighbor_lats - site_lat)
     dlon = np.radians(neighbor_lons - site_lon)
-    # Bearing từ current site tới neighbor sites
     y = np.sin(dlon) * np.cos(np.radians(neighbor_lats))
     x = np.cos(np.radians(site_lat)) * np.sin(np.radians(neighbor_lats)) - \
         np.sin(np.radians(site_lat)) * np.cos(np.radians(neighbor_lats)) * np.cos(dlon)
     bearings_to_neighbors = (np.degrees(np.arctan2(y, x)) + 360) % 360
 
-    for az in candidates:
-        # Tính mức độ lệch hướng trực diện
-        # Hướng bắn của candidate az so với vị trí neighbor
+    for az in valid_candidates:
         angle_diff1 = np.abs((az - bearings_to_neighbors + 180) % 360 - 180)
-        # Hướng bắn của neighbor cell ngược lại
         neighbor_boresight = (bearings_to_neighbors + 180) % 360
         angle_diff2 = np.abs((neighbor_azimuths - neighbor_boresight + 180) % 360 - 180)
         
-        # Điểm phạt cao nếu 2 cell hướng thẳng vào nhau
         penalty = np.sum(np.exp(-((angle_diff1**2 + angle_diff2**2) / (2 * 30**2))))
         score = -penalty
 
@@ -363,13 +376,17 @@ class RFDesignApp(tk.Tk):
                     self.log(f"[WARNING] Site {site_name}: Hết RSI đạt chuẩn {rsi_min_dist}m! Đã chọn nhóm tốt nhất có d_min = {int(max_min_rsi_dist)}m")
 
                 # Process 3 cells for this site
+                site_assigned_azs = []
                 for cell_idx in range(min(3, len(site_cells))):
                     cell_row = site_cells.iloc[cell_idx].to_dict()
 
-                    # Azimuth
+                    # Azimuth với kiểm tra độ lệch góc >= 90 độ
                     opt_azimuth = calculate_optimum_azimuth(
-                        site_lat, site_lon, n_lats, n_lons, n_azs, sector_idx=cell_idx
+                        site_lat, site_lon, n_lats, n_lons, n_azs, 
+                        sector_idx=cell_idx,
+                        assigned_site_azimuths=site_assigned_azs
                     )
+                    site_assigned_azs.append(opt_azimuth)
 
                     # Tilt Calculation
                     # Standard M-Tilt = 2
