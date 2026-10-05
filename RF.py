@@ -104,6 +104,32 @@ def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, 
 
     return best_azimuth
 
+def get_directional_nearest_distance(site_lat, site_lon, cell_azimuth, neighbor_lats, neighbor_lons, default_dist=1500.0):
+    """
+    Tính khoảng cách tới trạm lân cận gần nhất NẰM TRONG HƯỚNG BẮN của Cell (+- 45 độ).
+    """
+    if len(neighbor_lats) == 0:
+        return default_dist
+
+    # Tính Bearing từ site hiện tại đến các neighbor
+    dlat = np.radians(neighbor_lats - site_lat)
+    dlon = np.radians(neighbor_lons - site_lon)
+    y = np.sin(dlon) * np.cos(np.radians(neighbor_lats))
+    x = np.cos(np.radians(site_lat)) * np.sin(np.radians(neighbor_lats)) - \
+        np.sin(np.radians(site_lat)) * np.cos(np.radians(neighbor_lats)) * np.cos(dlon)
+    bearings = (np.degrees(np.arctan2(y, x)) + 360) % 360
+
+    # Lọc các trạm nằm trong nón phủ sóng (+- 45 độ so với cell_azimuth)
+    angle_diffs = np.abs((bearings - cell_azimuth + 180) % 360 - 180)
+    in_cone_mask = angle_diffs <= 45  # Góc mở quạt 90 độ (+- 45)
+
+    if not np.any(in_cone_mask):
+        return default_dist
+
+    # Tính khoảng cách tới các trạm trong nón
+    dists = haversine_np(site_lon, site_lat, neighbor_lons[in_cone_mask], neighbor_lats[in_cone_mask])
+    return max(np.min(dists), 100.0)  # Tránh chia cho 0
+
 # ==========================================
 # GUI APPLICATION
 # ==========================================
@@ -252,14 +278,11 @@ class RFDesignApp(tk.Tk):
             kdtree_existing = KDTree(existing_coords_cart)
 
             # Tracking structures for assigned PCIs/RSIs
-            # Matrix of existing allocated PCI/RSI positions: [x, y, z, value]
             assigned_pci_list = np.column_stack((existing_coords_cart, df_existing['PCI'].values))
             assigned_rsi_list = np.column_stack((existing_coords_cart, df_existing['RSI'].values))
 
             # Valid Groups
-            # PCI Groups: 0-449, bộ 3 liên tiếp: (0,1,2), (3,4,5)...
             pci_groups = [list(range(i, i+3)) for i in range(0, 448, 3)]
-            # RSI Groups: 0-642, bước 6: (0, 6, 12), (6, 12, 18), ...
             rsi_groups = [[r, (r+6)%643, (r+12)%643] for r in range(0, 643-12, 6)]
 
             # Group Input by Site
@@ -279,15 +302,15 @@ class RFDesignApp(tk.Tk):
                 _, nearest_idx = kdtree_existing.query(site_cart)
                 assigned_tac = df_existing.iloc[nearest_idx]['TAC']
 
-                # Distance to Nearest Existing Site (for E-Tilt calculation)
+                # Distance to Absolute Nearest Existing Site
                 nearest_site_dist = haversine_np(
                     site_lon, site_lat, 
                     df_existing.iloc[nearest_idx]['Lon'], df_existing.iloc[nearest_idx]['Lat']
                 )
                 nearest_site_dist = max(nearest_site_dist, 100.0) # avoid division by zero
 
-                # Find Neighbors around site within 3km for Azimuth Optimization
-                neighbor_indices = kdtree_existing.query_ball_point(site_cart, r=3000)
+                # Find Neighbors around site within 5km for Azimuth & Directional Tilt Calculation
+                neighbor_indices = kdtree_existing.query_ball_point(site_cart, r=5000)
                 if len(neighbor_indices) > 0:
                     n_lats = df_existing.iloc[neighbor_indices]['Lat'].values
                     n_lons = df_existing.iloc[neighbor_indices]['Lon'].values
@@ -380,7 +403,7 @@ class RFDesignApp(tk.Tk):
                 for cell_idx in range(min(3, len(site_cells))):
                     cell_row = site_cells.iloc[cell_idx].to_dict()
 
-                    # Azimuth với kiểm tra độ lệch góc >= 90 độ
+                    # 1. Azimuth với kiểm tra độ lệch góc >= 90 độ
                     opt_azimuth = calculate_optimum_azimuth(
                         site_lat, site_lon, n_lats, n_lons, n_azs, 
                         sector_idx=cell_idx,
@@ -388,13 +411,17 @@ class RFDesignApp(tk.Tk):
                     )
                     site_assigned_azs.append(opt_azimuth)
 
-                    # Tilt Calculation
-                    # Standard M-Tilt = 2
+                    # 2. Tilt Calculation (Directional Distance Alignment)
                     m_tilt = 2.0
                     ant_height = float(cell_row.get('Height', 30.0))
+
+                    # Khoảng cách tới trạm lân cận gần nhất THEO HƯỚNG BẮN của Cell (+- 45 độ)
+                    cell_directional_dist = get_directional_nearest_distance(
+                        site_lat, site_lon, opt_azimuth, n_lats, n_lons, default_dist=nearest_site_dist
+                    )
                     
-                    # Target coverage distance = 2/3 distance to nearest neighbor site
-                    d_coverage = (2.0 / 3.0) * nearest_site_dist
+                    # Target coverage distance = 2/3 khoảng cách tới site gần nhất HƯỚNG ĐÓ
+                    d_coverage = (2.0 / 3.0) * cell_directional_dist
                     total_tilt = math.degrees(math.atan(ant_height / d_coverage))
                     
                     # Electrical Tilt = Total Tilt - Mechanical Tilt
