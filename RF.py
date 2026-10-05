@@ -282,46 +282,85 @@ class RFDesignApp(tk.Tk):
                 else:
                     n_lats, n_lons, n_azs = np.array([]), np.array([]), np.array([])
 
-                # 2. Allocate PCI Group for the 3 cells
+                # ----------------------------------------------------
+                # 2. ALLOCATE PCI GROUP (Max-Min Distance Strategy)
+                # ----------------------------------------------------
                 selected_pci_group = None
+                max_min_pci_dist = -1
+                best_fallback_pci_group = pci_groups[0]
+
                 for group in pci_groups:
+                    min_dist_for_this_group = 1e9
                     conflict = False
+
                     for pci_val in group:
-                        # Check distance to all existing/assigned cells with SAME PCI
                         matched_pcis = assigned_pci_list[assigned_pci_list[:, 3] == pci_val]
                         if len(matched_pcis) > 0:
-                            dists = haversine_np(site_lon, site_lat, 
-                                                 np.degrees(np.arctan2(matched_pcis[:,1], matched_pcis[:,0])), 
-                                                 np.degrees(np.arcsin(matched_pcis[:,2]/6371000.0)))
-                            if np.min(dists) < pci_min_dist:
+                            dists = haversine_np(
+                                site_lon, site_lat, 
+                                np.degrees(np.arctan2(matched_pcis[:,1], matched_pcis[:,0])), 
+                                np.degrees(np.arcsin(matched_pcis[:,2]/6371000.0))
+                            )
+                            current_min_d = np.min(dists)
+                            if current_min_d < min_dist_for_this_group:
+                                min_dist_for_this_group = current_min_d
+
+                            if current_min_d < pci_min_dist:
                                 conflict = True
-                                break
+                        else:
+                            min_dist_for_this_group = 1e9
+
+                    if min_dist_for_this_group > max_min_pci_dist:
+                        max_min_pci_dist = min_dist_for_this_group
+                        best_fallback_pci_group = group
+
                     if not conflict:
                         selected_pci_group = group
                         break
 
                 if selected_pci_group is None:
-                    selected_pci_group = pci_groups[idx % len(pci_groups)] # Fallback
+                    selected_pci_group = best_fallback_pci_group
+                    self.log(f"[WARNING] Site {site_name}: Hết PCI đạt chuẩn {pci_min_dist}m! Đã chọn nhóm tốt nhất có d_min = {int(max_min_pci_dist)}m")
 
-                # 3. Allocate RSI Group for the 3 cells
+                # ----------------------------------------------------
+                # 3. ALLOCATE RSI GROUP (Max-Min Distance Strategy)
+                # ----------------------------------------------------
                 selected_rsi_group = None
+                max_min_rsi_dist = -1
+                best_fallback_rsi_group = rsi_groups[0]
+
                 for group in rsi_groups:
+                    min_dist_for_this_group = 1e9
                     conflict = False
+
                     for rsi_val in group:
                         matched_rsis = assigned_rsi_list[assigned_rsi_list[:, 3] == rsi_val]
                         if len(matched_rsis) > 0:
-                            dists = haversine_np(site_lon, site_lat, 
-                                                 np.degrees(np.arctan2(matched_rsis[:,1], matched_rsis[:,0])), 
-                                                 np.degrees(np.arcsin(matched_rsis[:,2]/6371000.0)))
-                            if np.min(dists) < rsi_min_dist:
+                            dists = haversine_np(
+                                site_lon, site_lat, 
+                                np.degrees(np.arctan2(matched_rsis[:,1], matched_rsis[:,0])), 
+                                np.degrees(np.arcsin(matched_rsis[:,2]/6371000.0))
+                            )
+                            current_min_d = np.min(dists)
+                            if current_min_d < min_dist_for_this_group:
+                                min_dist_for_this_group = current_min_d
+
+                            if current_min_d < rsi_min_dist:
                                 conflict = True
-                                break
+                        else:
+                            min_dist_for_this_group = 1e9
+
+                    if min_dist_for_this_group > max_min_rsi_dist:
+                        max_min_rsi_dist = min_dist_for_this_group
+                        best_fallback_rsi_group = group
+
                     if not conflict:
                         selected_rsi_group = group
                         break
 
                 if selected_rsi_group is None:
-                    selected_rsi_group = rsi_groups[idx % len(rsi_groups)] # Fallback
+                    selected_rsi_group = best_fallback_rsi_group
+                    self.log(f"[WARNING] Site {site_name}: Hết RSI đạt chuẩn {rsi_min_dist}m! Đã chọn nhóm tốt nhất có d_min = {int(max_min_rsi_dist)}m")
 
                 # Process 3 cells for this site
                 for cell_idx in range(min(3, len(site_cells))):
