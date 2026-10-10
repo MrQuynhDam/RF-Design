@@ -1,357 +1,197 @@
-import time
-import math
-import re
-import numpy as np
+import io
 import pandas as pd
-from scipy.spatial import KDTree
-
-
-def extract_sector_id(cell_name: str, site_name: str = "") -> str:
-    """
-    Tự động trích xuất ID Sector vật lý dựa trên CHỮ SỐ CUỐI CÙNG của mã cell.
-    Ví dụ:
-    - M11, M31, M51 -> Sector '1'
-    - M12, M32, M52 -> Sector '2'
-    - M13, M33, M53 -> Sector '3'
-    """
-    clean_cell = str(cell_name).strip()
-
-    # Tìm chữ số cuối cùng trước suffix '-DTP' hoặc ở cuối tên cell
-    match = re.search(r'(\d)(?:-[A-Za-z0-9]+)?$', clean_cell)
-    if match:
-        return match.group(1)
-
-    return clean_cell
-
-
-def haversine_np(lon1, lat1, lon2, lat2):
-    lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
-    c = 2 * np.arcsin(np.sqrt(a))
-    return c * 6371000.0
-
-
-def latlon_to_cartesian(lat, lon):
-    R = 6371000.0
-    lat_rad = np.radians(lat)
-    lon_rad = np.radians(lon)
-    x = R * np.cos(lat_rad) * np.cos(lon_rad)
-    y = R * np.cos(lat_rad) * np.sin(lon_rad)
-    z = R * np.sin(lat_rad)
-    return np.column_stack((x, y, z))
-
-
-def calculate_optimum_azimuth(site_lat, site_lon, neighbor_lats, neighbor_lons, neighbor_azimuths, sector_idx, total_sectors=3, assigned_site_azimuths=None):
-    if assigned_site_azimuths is None:
-        assigned_site_azimuths = []
-
-    base_angle = 360.0 / total_sectors
-    default_azimuth = int((sector_idx * base_angle) % 360)
-    best_azimuth = default_azimuth
-    max_score = -1e9
-
-    start_angle = int((default_azimuth - 30) % 360)
-    end_angle = int((default_azimuth + 35) % 360)
-
-    if start_angle < end_angle:
-        candidates = list(range(start_angle, end_angle, 5))
-    else:
-        candidates = list(range(start_angle, 360, 5)) + list(range(0, end_angle, 5))
-
-    valid_candidates = []
-    for az in candidates:
-        valid = True
-        for prev_az in assigned_site_azimuths:
-            diff = np.abs((az - prev_az + 180) % 360 - 180)
-            if diff < (360 / total_sectors) * 0.6:
-                valid = False
-                break
-        if valid:
-            valid_candidates.append(az)
-
-    if not valid_candidates:
-        valid_candidates = candidates if candidates else [default_azimuth]
-
-    if len(neighbor_lats) == 0:
-        return min(valid_candidates, key=lambda x: np.abs((x - default_azimuth + 180) % 360 - 180))
-
-    dlat = np.radians(neighbor_lats - site_lat)
-    dlon = np.radians(neighbor_lons - site_lon)
-    y = np.sin(dlon) * np.cos(np.radians(neighbor_lats))
-    x = np.cos(np.radians(site_lat)) * np.sin(np.radians(neighbor_lats)) - \
-        np.sin(np.radians(site_lat)) * np.cos(np.radians(neighbor_lats)) * np.cos(dlon)
-    bearings_to_neighbors = (np.degrees(np.arctan2(y, x)) + 360) % 360
-
-    for az in valid_candidates:
-        angle_diff1 = np.abs((az - bearings_to_neighbors + 180) % 360 - 180)
-        neighbor_boresight = (bearings_to_neighbors + 180) % 360
-        angle_diff2 = np.abs((neighbor_azimuths - neighbor_boresight + 180) % 360 - 180)
-
-        penalty = np.sum(np.exp(-((angle_diff1 ** 2 + angle_diff2 ** 2) / (2 * 30 ** 2))))
-        score = -penalty
-
-        if score > max_score:
-            max_score = score
-            best_azimuth = az
-
-    return best_azimuth
-
-
-def get_directional_nearest_distance(site_lat, site_lon, cell_azimuth, neighbor_lats, neighbor_lons, default_dist=1500.0):
-    if len(neighbor_lats) == 0:
-        return default_dist
-
-    dlat = np.radians(neighbor_lats - site_lat)
-    dlon = np.radians(neighbor_lons - site_lon)
-    y = np.sin(dlon) * np.cos(np.radians(neighbor_lats))
-    x = np.cos(np.radians(site_lat)) * np.sin(np.radians(neighbor_lats)) - \
-        np.sin(np.radians(site_lat)) * np.cos(np.radians(neighbor_lats)) * np.cos(dlon)
-    bearings = (np.degrees(np.arctan2(y, x)) + 360) % 360
-
-    angle_diffs = np.abs((bearings - cell_azimuth + 180) % 360 - 180)
-    in_cone_mask = angle_diffs <= 45
-
-    if not np.any(in_cone_mask):
-        return default_dist
-
-    dists = haversine_np(site_lon, site_lat, neighbor_lons[in_cone_mask], neighbor_lats[in_cone_mask])
-    return max(np.min(dists), 100.0)
-
-
-def check_pci_group_validity(candidate_group, site_lon, site_lat, assigned_pci_list, pci_min_dist, mod3_min_dist, mod6_min_dist):
-    if len(assigned_pci_list) == 0:
-        return True, 1e9
-
-    min_pci_dist = 1e9
-    assigned_lons = np.degrees(np.arctan2(assigned_pci_list[:, 1], assigned_pci_list[:, 0]))
-    assigned_lats = np.degrees(np.arcsin(np.clip(assigned_pci_list[:, 2] / 6371000.0, -1.0, 1.0)))
-    assigned_pcis = assigned_pci_list[:, 3].astype(int)
-
-    dists = haversine_np(site_lon, site_lat, assigned_lons, assigned_lats)
-
-    for pci_candidate in candidate_group:
-        cand_mod3 = pci_candidate % 3
-        cand_mod6 = pci_candidate % 6
-
-        same_pci_mask = (assigned_pcis == pci_candidate)
-        if np.any(same_pci_mask):
-            d = np.min(dists[same_pci_mask])
-            if d < min_pci_dist:
-                min_pci_dist = d
-            if d < pci_min_dist:
-                return False, min_pci_dist
-
-        same_mod3_mask = ((assigned_pcis % 3) == cand_mod3)
-        if np.any(same_mod3_mask):
-            d_mod3 = np.min(dists[same_mod3_mask])
-            if d_mod3 < mod3_min_dist:
-                return False, min_pci_dist
-
-        same_mod6_mask = ((assigned_pcis % 6) == cand_mod6)
-        if np.any(same_mod6_mask):
-            d_mod6 = np.min(dists[same_mod6_mask])
-            if d_mod6 < mod6_min_dist:
-                return False, min_pci_dist
-
-    return True, min_pci_dist
-
-
-def run_rf_planning(
-    df_rim, df_config, df_input,
-    pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
-    status_box, progress_bar,
-    pci_range=(0, 449), rsi_range=(0, 642)
-):
-    """Tiến hành phân bổ tham số RF theo Dải PCI và RSI cấu hình từ Textbox."""
-    start_time = time.time()
-    logs = []
-
-    def add_log(msg):
-        logs.append(time.strftime("[%H:%M:%S] ") + msg)
-
-    df_rim.columns = df_rim.columns.str.strip()
-    df_config.columns = df_config.columns.str.strip()
-    df_input.columns = df_input.columns.str.strip()
-
-    add_log(f"Đọc thành công: RIM ({len(df_rim)} dòng), Config ({len(df_config)} dòng), Input ({len(df_input)} dòng).")
-    progress_bar.progress(10)
-
-    df_existing = pd.merge(df_rim, df_config[['Cellname', 'TAC', 'PCI', 'RSI']], on='Cellname', how='inner')
-    add_log(f"Tổng hợp {len(df_existing)} cell mạng hiện hữu.")
-    progress_bar.progress(20)
-
-    existing_coords_cart = latlon_to_cartesian(df_existing['Lat'].values, df_existing['Lon'].values)
-    kdtree_existing = KDTree(existing_coords_cart)
-
-    assigned_pci_list = np.column_stack((existing_coords_cart, df_existing['PCI'].values))
-    assigned_rsi_list = np.column_stack((existing_coords_cart, df_existing['RSI'].values))
-
-    # --- TẠO DẢI NHÓM PCI & RSI DỰA TRÊN TEXTBOX INPUT ---
-    pci_start, pci_end = pci_range
-    rsi_start, rsi_end = rsi_range
-
-    pci_start = (pci_start // 3) * 3
-    rsi_start = (rsi_start // 6) * 6
-
-    pci_groups = [list(range(i, i + 3)) for i in range(pci_start, pci_end + 1, 3) if i + 2 <= pci_end]
-    if not pci_groups:
-        pci_groups = [[pci_start, pci_start + 1, pci_start + 2]]
-
-    rsi_groups = [[r, (r + 6) % 643, (r + 12) % 643] for r in range(rsi_start, rsi_end + 1, 6)]
-    if not rsi_groups:
-        rsi_groups = [[rsi_start, (rsi_start + 6) % 643, (rsi_start + 12) % 643]]
-
-    unique_sites = df_input['Sitename'].unique()
-    total_sites = len(unique_sites)
-    add_log(f"Bắt đầu quy hoạch cho {total_sites} site mới (Sử dụng PCI: {pci_start}-{pci_end}, RSI: {rsi_start}-{rsi_end})...")
-
-    output_rows = []
-
-    for idx, site_name in enumerate(unique_sites):
-        status_box.write(f"Đang xử lý site [{idx+1}/{total_sites}]: {site_name}")
-        site_cells = df_input[df_input['Sitename'] == site_name].copy()
-
-        # 1. Trích xuất nhóm Sector ID theo số CUỐI CÙNG của từng Cell
-        site_cells['Sector_ID'] = site_cells['Cellname'].apply(lambda c: extract_sector_id(c, site_name))
-        unique_sectors = list(dict.fromkeys(site_cells['Sector_ID']))
-        num_sectors = len(unique_sectors)
-
-        site_lat = site_cells['Lat'].iloc[0]
-        site_lon = site_cells['Lon'].iloc[0]
-        site_cart = latlon_to_cartesian(site_lat, site_lon)[0]
-
-        _, nearest_idx = kdtree_existing.query(site_cart)
-        assigned_tac = df_existing.iloc[nearest_idx]['TAC']
-
-        nearest_site_dist = haversine_np(site_lon, site_lat, df_existing.iloc[nearest_idx]['Lon'], df_existing.iloc[nearest_idx]['Lat'])
-        nearest_site_dist = max(nearest_site_dist, 100.0)
-
-        neighbor_indices = kdtree_existing.query_ball_point(site_cart, r=5000)
-        if len(neighbor_indices) > 0:
-            n_lats = df_existing.iloc[neighbor_indices]['Lat'].values
-            n_lons = df_existing.iloc[neighbor_indices]['Lon'].values
-            n_azs = df_existing.iloc[neighbor_indices]['Azimuth'].values
-        else:
-            n_lats, n_lons, n_azs = np.array([]), np.array([]), np.array([])
-
-        # 2. Phân bổ Nhóm PCI Best-Fit cho Site
-        selected_pci_group = None
-        max_valid_dist = -1
-        best_fallback_pci_group = pci_groups[0]
-        max_fallback_dist = -1
-
-        mod3_dist_req = min(3000.0, pci_min_dist * mod3_factor)
-        mod6_dist_req = min(2000.0, pci_min_dist * mod6_factor)
-
-        for group in pci_groups:
-            is_valid, min_d = check_pci_group_validity(group, site_lon, site_lat, assigned_pci_list, pci_min_dist, mod3_dist_req, mod6_dist_req)
-            if is_valid:
-                if min_d > max_valid_dist:
-                    max_valid_dist = min_d
-                    selected_pci_group = group
-            else:
-                if min_d > max_fallback_dist:
-                    max_fallback_dist = min_d
-                    best_fallback_pci_group = group
-
-        if selected_pci_group is None:
-            selected_pci_group = best_fallback_pci_group
-            add_log(f"[CẢNH BÁO] Site {site_name}: Chọn nhóm PCI dự phòng tốt nhất (d_min = {int(max_fallback_dist)}m)")
-
-        # 3. Phân bổ Nhóm RSI Best-Fit cho Site
-        selected_rsi_group = None
-        max_valid_rsi_dist = -1
-        best_fallback_rsi_group = rsi_groups[0]
-        max_fallback_rsi_dist = -1
-
-        for group in rsi_groups:
-            min_dist_for_this_group = 1e9
-            conflict = False
-            for rsi_val in group:
-                matched_rsis = assigned_rsi_list[assigned_rsi_list[:, 3] == rsi_val]
-                if len(matched_rsis) > 0:
-                    dists = haversine_np(site_lon, site_lat, np.degrees(np.arctan2(matched_rsis[:, 1], matched_rsis[:, 0])), np.degrees(np.arcsin(np.clip(matched_rsis[:, 2] / 6371000.0, -1.0, 1.0))))
-                    current_min_d = np.min(dists)
-                    if current_min_d < min_dist_for_this_group:
-                        min_dist_for_this_group = current_min_d
-                    if current_min_d < rsi_min_dist:
-                        conflict = True
-                else:
-                    min_dist_for_this_group = 1e9
-
-            if not conflict:
-                if min_dist_for_this_group > max_valid_rsi_dist:
-                    max_valid_rsi_dist = min_dist_for_this_group
-                    selected_rsi_group = group
-            else:
-                if min_dist_for_this_group > max_fallback_rsi_dist:
-                    max_fallback_rsi_dist = min_dist_for_this_group
-                    best_fallback_rsi_group = group
-
-        if selected_rsi_group is None:
-            selected_rsi_group = best_fallback_rsi_group
-
-        # 4. Tính toán Tham số RF (Azimuth, Tilt, PCI, RSI) cho từng SECTOR VẬT LÝ
-        sector_params = {}
-        site_assigned_azs = []
-
-        for sec_idx, sec_id in enumerate(unique_sectors):
-            sec_cells = site_cells[site_cells['Sector_ID'] == sec_id]
-            first_cell = sec_cells.iloc[0]
-
-            opt_azimuth = calculate_optimum_azimuth(
-                site_lat, site_lon, n_lats, n_lons, n_azs,
-                sector_idx=sec_idx,
-                total_sectors=num_sectors,
-                assigned_site_azimuths=site_assigned_azs
+import streamlit as st
+
+from src.config import CUSTOM_CSS
+from src.data_loader import (
+    get_sample_file_bytes,
+    load_csv_file,
+    get_gdrive_file_modified_date,
+    GDRIVE_DEFAULT_FILES
+)
+from src.rf_calculator import run_rf_planning
+
+# 1. Cấu hình trang & CSS
+st.set_page_config(
+    page_title="LTE RF Design Tool",
+    page_icon="📡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+st.title("📡 LTE RF DESIGN AUTOMATION TOOL")
+st.caption("Ericsson RAN Systems • Automatic Allocation for TAC, PCI, RSI, Azimuth, M-Tilt & E-Tilt")
+st.markdown("---")
+
+# 2. Thanh bên Sidebar
+with st.sidebar:
+    st.header("⚙️ Cấu Hình Tham Số")
+
+    # Khoảng cách an toàn
+    st.subheader("📏 Khoảng cách an toàn")
+    pci_min_dist = st.number_input("PCI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng PCI")
+    rsi_min_dist = st.number_input("RSI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng RSI")
+
+    st.markdown("---")
+
+    # Thiết lập dải PCI & RSI bằng Textbox
+    st.subheader("🔢 Dải Tham Số Sử Dụng (Range)")
+
+    st.markdown("**Dải PCI Range:**")
+    col_pci1, col_pci2 = st.columns(2)
+    with col_pci1:
+        pci_min_str = st.text_input("PCI Min", value="0", help="Giá trị PCI bắt đầu")
+    with col_pci2:
+        pci_max_str = st.text_input("PCI Max", value="449", help="Giá trị PCI kết thúc")
+
+    st.markdown("**Dải RSI Range:**")
+    col_rsi1, col_rsi2 = st.columns(2)
+    with col_rsi1:
+        rsi_min_str = st.text_input("RSI Min", value="0", help="Giá trị RSI bắt đầu")
+    with col_rsi2:
+        rsi_max_str = st.text_input("RSI Max", value="642", help="Giá trị RSI kết thúc")
+
+    st.markdown("---")
+
+    # Ràng buộc Modulo
+    st.subheader("🛡️ Ràng buộc Modulo")
+    mod3_factor = st.slider("Bảo vệ Mod3 (% PCI Range)", min_value=10, max_value=100, value=40, step=5) / 100.0
+    mod6_factor = st.slider("Bảo vệ Mod6 (% PCI Range)", min_value=10, max_value=100, value=25, step=5) / 100.0
+
+# 3. Lấy ngày Modify động từ Google Drive
+rims_date = get_gdrive_file_modified_date(GDRIVE_DEFAULT_FILES["RIMS.csv"])
+config_date = get_gdrive_file_modified_date(GDRIVE_DEFAULT_FILES["Config.csv"])
+
+# 4. Khu vực Input & Download Sample
+col_left, col_right = st.columns([1, 2], gap="medium")
+
+with col_left:
+    st.markdown('<div class="section-title">📥 1. Download Sample Files</div>', unsafe_allow_html=True)
+    sample_files = {
+        "RIMS.csv": f"File thông tin Trạm RIM (Mặc định ngày {rims_date})",
+        "Config.csv": f"File cấu hình Cell (Mặc định ngày {config_date})",
+        "Input_Sample.csv": "File danh sách Site mới cần quy hoạch"
+    }
+
+    for fname, fdesc in sample_files.items():
+        file_bytes = get_sample_file_bytes(fname)
+        if file_bytes:
+            st.download_button(
+                label="📄 " + fname,
+                data=file_bytes,
+                file_name=fname,
+                mime="text/csv",
+                use_container_width=True,
+                help=fdesc
             )
-            site_assigned_azs.append(opt_azimuth)
+        else:
+            st.button(f"❌ Không tìm thấy {fname}", disabled=True, use_container_width=True)
 
-            m_tilt = 2.0
-            ant_height = float(first_cell.get('Height', 30.0))
-            cell_directional_dist = get_directional_nearest_distance(site_lat, site_lon, opt_azimuth, n_lats, n_lons, default_dist=nearest_site_dist)
+with col_right:
+    st.markdown('<div class="section-title">📤 2. Upload input files</div>', unsafe_allow_html=True)
+    u1, u2, u3 = st.columns(3)
+    with u1:
+        rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định sử dụng dữ liệu RIMs ngày {rims_date})]", type=["csv"], key="rim")
+    with u2:
+        config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định sử dụng dữ liệu Config ngày {config_date})]", type=["csv"], key="config")        
+    with u3:
+        input_file = st.file_uploader("3. Input.csv (Upload thông tin các site/cell cần thiết kế RF)", type=["csv"], key="input")
 
-            d_coverage = (2.0 / 3.0) * cell_directional_dist
-            total_tilt = math.degrees(math.atan(ant_height / d_coverage))
-            e_tilt = max(0, int(round(total_tilt - m_tilt)))
+st.markdown("---")
+col_btn, _ = st.columns([1, 2])
+with col_btn:
+    execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH RF", type="primary", use_container_width=True)
 
-            pci_val = int(selected_pci_group[sec_idx % len(selected_pci_group)])
-            rsi_val = int(selected_rsi_group[sec_idx % len(selected_rsi_group)])
+# 5. Thực thi tính toán quy hoạch RF
+if execute_btn:
+    try:
+        pci_start = int(pci_min_str.strip())
+        pci_end = int(pci_max_str.strip())
+        rsi_start = int(rsi_min_str.strip())
+        rsi_end = int(rsi_max_str.strip())
+        valid_range = True
+    except ValueError:
+        st.error("⚠️ Giá trị dải PCI và RSI nhập vào textbox phải là số nguyên!")
+        valid_range = False
 
-            sector_params[sec_id] = {
-                'TAC': int(assigned_tac),
-                'PCI': pci_val,
-                'RSI': rsi_val,
-                'Azimuth': int(opt_azimuth),
-                'M-Tilt': int(m_tilt),
-                'E-Tilt': int(e_tilt)
-            }
+    if valid_range:
+        status_box = st.status("⚙️ Đang tiến hành phân bổ tham số RF...", expanded=True)
+        progress_bar = st.progress(0)
 
-            assigned_pci_list = np.vstack([assigned_pci_list, [*site_cart, pci_val]])
-            assigned_rsi_list = np.vstack([assigned_rsi_list, [*site_cart, rsi_val]])
+        try:
+            status_box.write("Đang tải dữ liệu RIMS, Config và Input...")
 
-        # 5. Đồng bộ tham số vừa tính cho TẤT CẢ các Cell cùng Sector ID
-        for _, cell_row_s in site_cells.iterrows():
-            cell_row = cell_row_s.to_dict()
-            sec_id = cell_row.pop('Sector_ID', None)
-            s_param = sector_params[sec_id]
+            # 1. Đọc RIMS: Upload > Google Drive
+            df_rim = load_csv_file(
+                uploaded_file=rim_file,
+                default_gdrive_id=GDRIVE_DEFAULT_FILES["RIMS.csv"],
+                local_path="data/RIMS_Sample.csv"
+            )
 
-            cell_row['TAC'] = s_param['TAC']
-            cell_row['PCI'] = s_param['PCI']
-            cell_row['RSI'] = s_param['RSI']
-            cell_row['Azimuth'] = s_param['Azimuth']
-            cell_row['M-Tilt'] = s_param['M-Tilt']
-            cell_row['E-Tilt'] = s_param['E-Tilt']
+            # 2. Đọc Config: Upload > Google Drive
+            df_config = load_csv_file(
+                uploaded_file=config_file,
+                default_gdrive_id=GDRIVE_DEFAULT_FILES["Config.csv"],
+                local_path="data/Config_Sample.csv"
+            )
 
-            output_rows.append(cell_row)
+            # 3. Đọc Input: Upload > Sample
+            df_input = load_csv_file(
+                uploaded_file=input_file,
+                local_path="data/Input_Sample.csv"
+            )
 
-        progress_bar.progress(20 + int(((idx + 1) / total_sites) * 70))
+            if df_rim is None or df_config is None or df_input is None:
+                status_box.update(label="❌ Thiếu dữ liệu đầu vào!", state="error")
+                st.error("⚠️ Không thể đọc file dữ liệu. Vui lòng kiểm tra kết nối Google Drive hoặc upload file!")
+            elif pci_start >= pci_end:
+                st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
+            elif rsi_start >= rsi_end:
+                st.error("⚠️ Giá trị 'RSI Min' phải nhỏ hơn 'RSI Max'!")
+            else:
+                df_output, logs_text, elapsed_time = run_rf_planning(
+                    df_rim, df_config, df_input,
+                    pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
+                    status_box, progress_bar,
+                    pci_range=(pci_start, pci_end),
+                    rsi_range=(rsi_start, rsi_end)
+                )
 
-    df_output = pd.DataFrame(output_rows)
-    progress_bar.progress(100)
-    elapsed_time = round(time.time() - start_time, 2)
-    add_log(f"HOÀN THÀNH: Đã tính toán xong cho {len(output_rows)} cells ({total_sites} sites) trong {elapsed_time} giây.")
+                status_box.update(label="✅ Hoàn tất quy hoạch thành công!", state="complete", expanded=False)
+                st.session_state["output_df"] = df_output
+                st.session_state["logs"] = logs_text
+                st.session_state["exec_time"] = elapsed_time
 
-    return df_output, "\n".join(logs), elapsed_time
+        except Exception as e:
+            status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
+            st.error(f"Chi tiết lỗi: {str(e)}")
+
+# 6. Hiển thị Dashboard Kết quả
+if "output_df" in st.session_state:
+    st.markdown("### 📊 Kết Quả Quy Hoạch")
+    df_out = st.session_state["output_df"]
+    exec_t = st.session_state.get("exec_time", 0)
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Site Mới", f"{df_out['Sitename'].nunique()}")
+    m2.metric("Tổng Cell Phân Bổ", f"{len(df_out)}")
+    m3.metric("Góc E-Tilt Trung Bình", f"{df_out['E-Tilt'].mean():.1f}°")
+    m4.metric("Thời Gian Xử Lý", f"{exec_t}s")
+
+    tab_data, tab_log = st.tabs(["📋 Danh Sách Kết Quả (Output Data)", "📜 Nhật Ký Xử Lý (Logs)"])
+
+    with tab_data:
+        st.dataframe(df_out, use_container_width=True, height=380)
+        csv_buffer = io.StringIO()
+        df_out.to_csv(csv_buffer, index=False)
+        st.download_button(
+            label="📥 Tải Về Kết Quả Quy Hoạch (Output_RF_Design.csv)",
+            type="primary",
+            data=csv_buffer.getvalue().encode('utf-8-sig'),
+            file_name="Output_RF_Design.csv",
+            mime="text/csv"
+        )
+
+    with tab_log:
+        st.code(st.session_state.get("logs", ""), language="text")
