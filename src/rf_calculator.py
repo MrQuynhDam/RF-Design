@@ -315,8 +315,17 @@ def run_rf_planning(
             cell_directional_dist = get_directional_nearest_distance(site_lat, site_lon, opt_azimuth, n_lats, n_lons, default_dist=nearest_site_dist)
 
             d_coverage = (2.0 / 3.0) * cell_directional_dist
-            total_tilt = math.degrees(math.atan(ant_height / d_coverage))
-            e_tilt = max(0, int(round(total_tilt - m_tilt)))
+            raw_total_tilt = math.degrees(math.atan(ant_height / d_coverage))
+
+            # Giới hạn TotalTilt tối thiểu >= 3°
+            calculated_total_tilt = max(3.0, raw_total_tilt)
+            e_tilt = max(0, int(round(calculated_total_tilt - m_tilt)))
+            
+            # Đảm bảo TotalTilt = M-Tilt + E-Tilt >= 3°
+            actual_total_tilt = int(m_tilt + e_tilt)
+            if actual_total_tilt < 3:
+                actual_total_tilt = 3
+                e_tilt = actual_total_tilt - int(m_tilt)
 
             pci_val = int(selected_pci_group[sec_idx % len(selected_pci_group)])
             rsi_val = int(selected_rsi_group[sec_idx % len(selected_rsi_group)])
@@ -327,13 +336,14 @@ def run_rf_planning(
                 'RSI': rsi_val,
                 'Azimuth': int(opt_azimuth),
                 'M-Tilt': int(m_tilt),
-                'E-Tilt': int(e_tilt)
+                'E-Tilt': int(e_tilt),
+                'TotalTilt': int(actual_total_tilt)
             }
 
             assigned_pci_list = np.vstack([assigned_pci_list, [*site_cart, pci_val]])
             assigned_rsi_list = np.vstack([assigned_rsi_list, [*site_cart, rsi_val]])
 
-        # 5. Đồng bộ TAC, PCI, RSI, Azimuth, M-Tilt, E-Tilt cho TẤT CẢ các Cell thuộc cùng Sector/Site
+        # 5. Đồng bộ TAC, PCI, RSI, Azimuth, M-Tilt, E-Tilt, TotalTilt cho TẤT CẢ các Cell thuộc cùng Sector/Site
         for _, cell_row_s in site_cells.iterrows():
             cell_row = cell_row_s.to_dict()
             sec_id = cell_row.pop('Sector_ID', None)
@@ -345,6 +355,7 @@ def run_rf_planning(
             cell_row['Azimuth'] = s_param['Azimuth']
             cell_row['M-Tilt'] = s_param['M-Tilt']
             cell_row['E-Tilt'] = s_param['E-Tilt']
+            cell_row['TotalTilt'] = s_param['TotalTilt']
 
             output_rows.append(cell_row)
 
