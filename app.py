@@ -6,6 +6,7 @@ from src.config import CUSTOM_CSS
 from src.data_loader import (
     get_sample_file_bytes,
     load_csv_file,
+    get_gdrive_file_modified_date,
     GDRIVE_DEFAULT_FILES
 )
 from src.rf_calculator import run_rf_planning
@@ -58,14 +59,18 @@ with st.sidebar:
     mod3_factor = st.slider("Bảo vệ Mod3 (% PCI Range)", min_value=10, max_value=100, value=40, step=5) / 100.0
     mod6_factor = st.slider("Bảo vệ Mod6 (% PCI Range)", min_value=10, max_value=100, value=25, step=5) / 100.0
 
-# 3. Khu vực Input & Download Sample
+# 3. Lấy ngày Modify động từ Google Drive
+rims_date = get_gdrive_file_modified_date(GDRIVE_DEFAULT_FILES["RIMS.csv"])
+config_date = get_gdrive_file_modified_date(GDRIVE_DEFAULT_FILES["Config.csv"])
+
+# 4. Khu vực Input & Download Sample
 col_left, col_right = st.columns([1, 2], gap="medium")
 
 with col_left:
     st.markdown('<div class="section-title">📥 1. Download Sample Files</div>', unsafe_allow_html=True)
     sample_files = {
-        "RIMS.csv": "File thông tin Trạm RIM hiện hữu (Mặc định Google Drive)",
-        "Config.csv": "File cấu hình Cell hiện hữu (Mặc định Google Drive)",
+        "RIMS.csv": f"File thông tin Trạm RIM (Mặc định ngày {rims_date})",
+        "Config.csv": f"File cấu hình Cell (Mặc định ngày {config_date})",
         "Input_Sample.csv": "File danh sách Site mới cần quy hoạch"
     }
 
@@ -87,9 +92,9 @@ with col_right:
     st.markdown('<div class="section-title">📤 2. Upload input files</div>', unsafe_allow_html=True)
     u1, u2, u3 = st.columns(3)
     with u1:
-        rim_file = st.file_uploader("1. RIMS.csv (Tùy chọn - Mặc định Drive)", type=["csv"], key="rim")
+        rim_file = st.file_uploader(f"1. RIMS.csv (Mặc định dữ liệu RIMs ngày {rims_date})", type=["csv"], key="rim")
     with u2:
-        config_file = st.file_uploader("2. Config.csv (Tùy chọn - Mặc định Drive)", type=["csv"], key="config")
+        config_file = st.file_uploader(f"2. Config.csv (Mặc định dữ liệu Config ngày {config_date})", type=["csv"], key="config")
     with u3:
         input_file = st.file_uploader("3. Input.csv (Bắt buộc)", type=["csv"], key="input")
 
@@ -98,7 +103,7 @@ col_btn, _ = st.columns([1, 2])
 with col_btn:
     execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH RF", type="primary", use_container_width=True)
 
-# 4. Thực thi tính toán quy hoạch RF
+# 5. Thực thi tính toán quy hoạch RF
 if execute_btn:
     try:
         pci_start = int(pci_min_str.strip())
@@ -162,7 +167,7 @@ if execute_btn:
             status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
             st.error(f"Chi tiết lỗi: {str(e)}")
 
-# 5. Hiển thị Dashboard Kết quả
+# 6. Hiển thị Dashboard Kết quả
 if "output_df" in st.session_state:
     st.markdown("### 📊 Kết Quả Quy Hoạch")
     df_out = st.session_state["output_df"]
