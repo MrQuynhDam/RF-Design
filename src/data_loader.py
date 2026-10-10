@@ -1,8 +1,11 @@
 import os
 import io
+import re
 import requests
 import pandas as pd
 import streamlit as st
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from src.config import GITHUB_USER, GITHUB_REPO
 
 # File ID Google Drive mặc định
@@ -10,6 +13,30 @@ GDRIVE_DEFAULT_FILES = {
     "RIMS.csv": "1bYv7Ep37WYjdKYmJqx3AovNadeRii_AM",
     "Config.csv": "1BnvTWG-W_qyqBBxrUhbkki__g2CaRDA-"
 }
+
+
+@st.cache_data(ttl=3600)
+def get_gdrive_file_modified_date(file_id: str) -> str:
+    """Tự động lấy ngày cập nhật cuối cùng (Modify Date) của file trên Google Drive (định dạng dd/mm/yyyy)."""
+    url = f"https://drive.google.com/file/d/{file_id}/view"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            # 1. Tìm timestamp trong metadata script của Google Drive page
+            match = re.search(r'"modifiedTime"\s*:\s*"([^"]+)"', response.text)
+            if match:
+                iso_str = match.group(1)
+                dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+                return dt.strftime("%d/%m/%Y")
+
+            # 2. Fallback kiểm tra header HTTP nếu có
+            if 'Last-Modified' in response.headers:
+                dt = parsedate_to_datetime(response.headers['Last-Modified'])
+                return dt.strftime("%d/%m/%Y")
+    except Exception:
+        pass
+
+    return "mới nhất"
 
 
 @st.cache_data(ttl=3600)
@@ -60,7 +87,6 @@ def get_sample_file_bytes(filename: str):
             with open(path, "rb") as f:
                 return f.read()
 
-    # Nếu có ID Google Drive tương ứng thì tải từ Google Drive
     if filename in GDRIVE_DEFAULT_FILES:
         content = fetch_gdrive_file(GDRIVE_DEFAULT_FILES[filename])
         if content:
