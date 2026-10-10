@@ -16,17 +16,39 @@ st.set_page_config(
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 st.title("📡 LTE RF DESIGN AUTOMATION TOOL")
-st.caption("Ericsson RAN Systems • Automatic Allocation for TAC, PCI (Best-Fit Range 0-449), RSI, Azimuth, M-Tilt & E-Tilt")
+st.caption("Ericsson RAN Systems • Automatic Allocation for TAC, PCI, RSI, Azimuth, M-Tilt & E-Tilt")
 st.markdown("---")
 
 # 2. Thanh bên Sidebar
 with st.sidebar:
     st.header("⚙️ Cấu Hình Tham Số")
+    
+    # --- KHOẢNG CÁCH TÁI SỬ DỤNG ---
+    st.subheader("📏 Khoảng cách an toàn")
     pci_min_dist = st.number_input("PCI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng PCI")
     rsi_min_dist = st.number_input("RSI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng RSI")
     
     st.markdown("---")
-    st.markdown("##### 🛡️ Ràng buộc Modulo")
+    
+    # --- BỔ SUNG: TÙY CHỌN DẢI PCI & RSI ---
+    st.subheader("🔢 Dải Tham Số Sử Dụng")
+    
+    col_pci1, col_pci2 = st.columns(2)
+    with col_pci1:
+        pci_start = st.number_input("PCI Min", min_value=0, max_value=503, value=0, step=3, help="Giá trị PCI bắt đầu")
+    with col_pci2:
+        pci_end = st.number_input("PCI Max", min_value=0, max_value=503, value=449, step=3, help="Giá trị PCI kết thúc")
+        
+    col_rsi1, col_rsi2 = st.columns(2)
+    with col_rsi1:
+        rsi_start = st.number_input("RSI Min", min_value=0, max_value=642, value=0, step=6, help="Giá trị RSI bắt đầu")
+    with col_rsi2:
+        rsi_end = st.number_input("RSI Max", min_value=0, max_value=642, value=630, step=6, help="Giá trị RSI kết thúc")
+
+    st.markdown("---")
+    
+    # --- RÀNG BUỘC MODULO ---
+    st.subheader("🛡️ Ràng buộc Modulo")
     mod3_factor = st.slider("Bảo vệ Mod3 (% PCI Range)", min_value=10, max_value=100, value=40, step=5) / 100.0
     mod6_factor = st.slider("Bảo vệ Mod6 (% PCI Range)", min_value=10, max_value=100, value=25, step=5) / 100.0
 
@@ -74,6 +96,10 @@ with col_btn:
 if execute_btn:
     if not rim_file or not config_file or not input_file:
         st.error("⚠️ Vui lòng tải đủ 3 file CSV đầu vào (hoặc chọn dùng file mẫu)!")
+    elif pci_start >= pci_end:
+        st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
+    elif rsi_start >= rsi_end:
+        st.error("⚠️ Giá trị 'RSI Min' phải nhỏ hơn 'RSI Max'!")
     else:
         status_box = st.status("⚙️ Đang tiến hành phân bổ tham số RF...", expanded=True)
         progress_bar = st.progress(0)
@@ -87,7 +113,9 @@ if execute_btn:
             df_output, logs_text, elapsed_time = run_rf_planning(
                 df_rim, df_config, df_input,
                 pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
-                status_box, progress_bar
+                status_box, progress_bar,
+                pci_range=(int(pci_start), int(pci_end)),
+                rsi_range=(int(rsi_start), int(rsi_end))
             )
 
             status_box.update(label="✅ Hoàn tất quy hoạch thành công!", state="complete", expanded=False)
