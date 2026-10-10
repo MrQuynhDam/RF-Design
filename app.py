@@ -92,11 +92,11 @@ with col_right:
     st.markdown('<div class="section-title">📤 2. Upload input files</div>', unsafe_allow_html=True)
     u1, u2, u3 = st.columns(3)
     with u1:
-        rim_file = st.file_uploader(f"1. RIMS.csv (Mặc định dữ liệu RIMs ngày {rims_date})", type=["csv"], key="rim")
+        rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định sử dụng dữ liệu RIMs ngày {rims_date})]", type=["csv"], key="rim")
     with u2:
-        config_file = st.file_uploader(f"2. Config.csv (Mặc định dữ liệu Config ngày {config_date})", type=["csv"], key="config")
+        config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định sử dụng dữ liệu Config ngày {config_date})]", type=["csv"], key="config")        
     with u3:
-        input_file = st.file_uploader("3. Input.csv (Bắt buộc)", type=["csv"], key="input")
+        input_file = st.file_uploader("3. Input.csv (Upload thông tin các site/cell cần thiết kế RF)", type=["csv"], key="input")
 
 st.markdown("---")
 col_btn, _ = st.columns([1, 2])
