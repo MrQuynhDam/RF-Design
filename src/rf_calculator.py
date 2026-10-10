@@ -133,8 +133,15 @@ def check_pci_group_validity(candidate_group, site_lon, site_lat, assigned_pci_l
 
     return True, min_pci_dist
 
-def run_rf_planning(df_rim, df_config, df_input, pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor, status_box, progress_bar):
-    """Hàm chạy tiến trình quy hoạch RF toàn cục."""
+# (Giữ nguyên các hàm bổ trợ haversine_np, latlon_to_cartesian, calculate_optimum_azimuth, ...)
+
+def run_rf_planning(
+    df_rim, df_config, df_input, 
+    pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor, 
+    status_box, progress_bar,
+    pci_range=(0, 449), rsi_range=(0, 630)
+):
+    """Hàm chạy tiến trình quy hoạch RF toàn cục với dải PCI và RSI tùy chỉnh."""
     start_time = time.time()
     logs = []
 
@@ -158,12 +165,21 @@ def run_rf_planning(df_rim, df_config, df_input, pci_min_dist, rsi_min_dist, mod
     assigned_pci_list = np.column_stack((existing_coords_cart, df_existing['PCI'].values))
     assigned_rsi_list = np.column_stack((existing_coords_cart, df_existing['RSI'].values))
 
-    pci_groups = [list(range(i, i + 3)) for i in range(0, 450, 3)]
-    rsi_groups = [[r, (r + 6) % 643, (r + 12) % 643] for r in range(0, 643 - 12, 6)]
+    # --- TẠO DẢI PCI & RSI DỰA TRÊN THIẾT LẬP CỦA NGUỜI DÙNG ---
+    pci_start, pci_end = pci_range
+    rsi_start, rsi_end = rsi_range
+
+    pci_groups = [list(range(i, i + 3)) for i in range(pci_start, pci_end + 1, 3) if i + 2 <= pci_end]
+    if not pci_groups:
+        pci_groups = [list(range(0, 3))] # Fallback phòng trường hợp range quá hẹp
+
+    rsi_groups = [[r, (r + 6) % 643, (r + 12) % 643] for r in range(rsi_start, rsi_end + 1, 6)]
+    if not rsi_groups:
+        rsi_groups = [[0, 6, 12]]
 
     unique_sites = df_input['Sitename'].unique()
     total_sites = len(unique_sites)
-    add_log(f"Bắt đầu quy hoạch cho {total_sites} site mới (PCI Best-Fit trong dải 0-449)...")
+    add_log(f"Bắt đầu quy hoạch cho {total_sites} site mới (PCI: {pci_start}-{pci_end}, RSI: {rsi_start}-{rsi_end})...")
 
     output_rows = []
 
