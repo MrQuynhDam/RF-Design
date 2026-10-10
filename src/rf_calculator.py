@@ -222,6 +222,7 @@ def run_rf_planning(
         site_lon = site_cells['Lon'].iloc[0]
         site_cart = latlon_to_cartesian(site_lat, site_lon)[0]
 
+        # Lấy TAC từ trạm hiện hữu gần nhất
         _, nearest_idx = kdtree_existing.query(site_cart)
         assigned_tac = df_existing.iloc[nearest_idx]['TAC']
 
@@ -293,7 +294,7 @@ def run_rf_planning(
         if selected_rsi_group is None:
             selected_rsi_group = best_fallback_rsi_group
 
-        # 4. Tính toán Tham số RF (Azimuth, Tilt, PCI, RSI) cho từng SECTOR VẬT LÝ
+        # 4. Tính toán Tham số RF (TAC, Azimuth, Tilt, PCI, RSI) cho từng SECTOR VẬT LÝ
         sector_params = {}
         site_assigned_azs = []
 
@@ -332,7 +333,7 @@ def run_rf_planning(
             assigned_pci_list = np.vstack([assigned_pci_list, [*site_cart, pci_val]])
             assigned_rsi_list = np.vstack([assigned_rsi_list, [*site_cart, rsi_val]])
 
-        # 5. Đồng bộ tham số vừa tính cho TẤT CẢ các Cell cùng Sector ID
+        # 5. Đồng bộ TAC, PCI, RSI, Azimuth, M-Tilt, E-Tilt cho TẤT CẢ các Cell thuộc cùng Sector/Site
         for _, cell_row_s in site_cells.iterrows():
             cell_row = cell_row_s.to_dict()
             sec_id = cell_row.pop('Sector_ID', None)
