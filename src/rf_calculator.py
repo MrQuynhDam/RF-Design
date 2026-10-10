@@ -1,8 +1,27 @@
 import time
 import math
+import re
 import numpy as np
 import pandas as pd
 from scipy.spatial import KDTree
+
+
+def extract_sector_id(cell_name: str, site_name: str = "") -> str:
+    """
+    Tự động trích xuất ID Sector vật lý dựa trên CHỮ SỐ CUỐI CÙNG của mã cell.
+    Ví dụ:
+    - M11, M31, M51 -> Sector '1'
+    - M12, M32, M52 -> Sector '2'
+    - M13, M33, M53 -> Sector '3'
+    """
+    clean_cell = str(cell_name).strip()
+
+    # Tìm chữ số cuối cùng trước suffix '-DTP' hoặc ở cuối tên cell
+    match = re.search(r'(\d)(?:-[A-Za-z0-9]+)?$', clean_cell)
+    if match:
+        return match.group(1)
+
+    return clean_cell
 
 
 def haversine_np(lon1, lat1, lon2, lat2):
@@ -169,7 +188,7 @@ def run_rf_planning(
     assigned_pci_list = np.column_stack((existing_coords_cart, df_existing['PCI'].values))
     assigned_rsi_list = np.column_stack((existing_coords_cart, df_existing['RSI'].values))
 
-    # --- TẠO DẢI NHÓM PCI & RSI DỰA TRÊN TEXTBOX INPUT (Tự động chuẩn hóa mod 3 & mod 6) ---
+    # --- TẠO DẢI NHÓM PCI & RSI DỰA TRÊN TEXTBOX INPUT ---
     pci_start, pci_end = pci_range
     rsi_start, rsi_end = rsi_range
 
@@ -193,6 +212,12 @@ def run_rf_planning(
     for idx, site_name in enumerate(unique_sites):
         status_box.write(f"Đang xử lý site [{idx+1}/{total_sites}]: {site_name}")
         site_cells = df_input[df_input['Sitename'] == site_name].copy()
+
+        # 1. Trích xuất nhóm Sector ID theo số CUỐI CÙNG của từng Cell
+        site_cells['Sector_ID'] = site_cells['Cellname'].apply(lambda c: extract_sector_id(c, site_name))
+        unique_sectors = list(dict.fromkeys(site_cells['Sector_ID']))
+        num_sectors = len(unique_sectors)
+
         site_lat = site_cells['Lat'].iloc[0]
         site_lon = site_cells['Lon'].iloc[0]
         site_cart = latlon_to_cartesian(site_lat, site_lon)[0]
@@ -211,7 +236,7 @@ def run_rf_planning(
         else:
             n_lats, n_lons, n_azs = np.array([]), np.array([]), np.array([])
 
-        # --- Phân bổ PCI ---
+        # 2. Phân bổ Nhóm PCI Best-Fit cho Site
         selected_pci_group = None
         max_valid_dist = -1
         best_fallback_pci_group = pci_groups[0]
@@ -235,7 +260,7 @@ def run_rf_planning(
             selected_pci_group = best_fallback_pci_group
             add_log(f"[CẢNH BÁO] Site {site_name}: Chọn nhóm PCI dự phòng tốt nhất (d_min = {int(max_fallback_dist)}m)")
 
-        # --- Phân bổ RSI ---
+        # 3. Phân bổ Nhóm RSI Best-Fit cho Site
         selected_rsi_group = None
         max_valid_rsi_dist = -1
         best_fallback_rsi_group = rsi_groups[0]
@@ -268,34 +293,59 @@ def run_rf_planning(
         if selected_rsi_group is None:
             selected_rsi_group = best_fallback_rsi_group
 
-        # --- Góc Azimuth & Tilt ---
+        # 4. Tính toán Tham số RF (Azimuth, Tilt, PCI, RSI) cho từng SECTOR VẬT LÝ
+        sector_params = {}
         site_assigned_azs = []
-        num_cells = len(site_cells)
 
-        for cell_idx in range(num_cells):
-            cell_row = site_cells.iloc[cell_idx].to_dict()
-            opt_azimuth = calculate_optimum_azimuth(site_lat, site_lon, n_lats, n_lons, n_azs, sector_idx=cell_idx, total_sectors=num_cells, assigned_site_azimuths=site_assigned_azs)
+        for sec_idx, sec_id in enumerate(unique_sectors):
+            sec_cells = site_cells[site_cells['Sector_ID'] == sec_id]
+            first_cell = sec_cells.iloc[0]
+
+            opt_azimuth = calculate_optimum_azimuth(
+                site_lat, site_lon, n_lats, n_lons, n_azs,
+                sector_idx=sec_idx,
+                total_sectors=num_sectors,
+                assigned_site_azimuths=site_assigned_azs
+            )
             site_assigned_azs.append(opt_azimuth)
 
             m_tilt = 2.0
-            ant_height = float(cell_row.get('Height', 30.0))
+            ant_height = float(first_cell.get('Height', 30.0))
             cell_directional_dist = get_directional_nearest_distance(site_lat, site_lon, opt_azimuth, n_lats, n_lons, default_dist=nearest_site_dist)
 
             d_coverage = (2.0 / 3.0) * cell_directional_dist
             total_tilt = math.degrees(math.atan(ant_height / d_coverage))
             e_tilt = max(0, int(round(total_tilt - m_tilt)))
 
-            cell_row['TAC'] = int(assigned_tac)
-            cell_row['PCI'] = int(selected_pci_group[cell_idx % len(selected_pci_group)])
-            cell_row['RSI'] = int(selected_rsi_group[cell_idx % len(selected_rsi_group)])
-            cell_row['Azimuth'] = int(opt_azimuth)
-            cell_row['M-Tilt'] = int(m_tilt)
-            cell_row['E-Tilt'] = int(e_tilt)
+            pci_val = int(selected_pci_group[sec_idx % len(selected_pci_group)])
+            rsi_val = int(selected_rsi_group[sec_idx % len(selected_rsi_group)])
+
+            sector_params[sec_id] = {
+                'TAC': int(assigned_tac),
+                'PCI': pci_val,
+                'RSI': rsi_val,
+                'Azimuth': int(opt_azimuth),
+                'M-Tilt': int(m_tilt),
+                'E-Tilt': int(e_tilt)
+            }
+
+            assigned_pci_list = np.vstack([assigned_pci_list, [*site_cart, pci_val]])
+            assigned_rsi_list = np.vstack([assigned_rsi_list, [*site_cart, rsi_val]])
+
+        # 5. Đồng bộ tham số vừa tính cho TẤT CẢ các Cell cùng Sector ID
+        for _, cell_row_s in site_cells.iterrows():
+            cell_row = cell_row_s.to_dict()
+            sec_id = cell_row.pop('Sector_ID', None)
+            s_param = sector_params[sec_id]
+
+            cell_row['TAC'] = s_param['TAC']
+            cell_row['PCI'] = s_param['PCI']
+            cell_row['RSI'] = s_param['RSI']
+            cell_row['Azimuth'] = s_param['Azimuth']
+            cell_row['M-Tilt'] = s_param['M-Tilt']
+            cell_row['E-Tilt'] = s_param['E-Tilt']
 
             output_rows.append(cell_row)
-
-            assigned_pci_list = np.vstack([assigned_pci_list, [*site_cart, cell_row['PCI']]])
-            assigned_rsi_list = np.vstack([assigned_rsi_list, [*site_cart, cell_row['RSI']]])
 
         progress_bar.progress(20 + int(((idx + 1) / total_sites) * 70))
 
