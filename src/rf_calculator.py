@@ -37,16 +37,15 @@ def run_rf_planning(
     assigned_rsi_list = np.column_stack((existing_coords_cart, df_existing['RSI'].values))
 
     # --- TẠO DẢI NHÓM PCI & RSI DỰA TRÊN TEXTBOX INPUT ---
-    pci_start, pci_end = pci_range
-    rsi_start, rsi_end = rsi_range
+pci_start, pci_end = pci_range
+rsi_start, rsi_end = rsi_range
 
-    pci_groups = [list(range(i, i + 3)) for i in range(pci_start, pci_end + 1, 3) if i + 2 <= pci_end]
-    if not pci_groups:
-        pci_groups = [[pci_start, pci_start + 1, pci_start + 2]]
+# Tự động chuẩn hóa mốc bắt đầu chia hết cho 3 (PCI) và chia hết cho 6 (RSI)
+pci_start = (pci_start // 3) * 3
+rsi_start = (rsi_start // 6) * 6
 
-    rsi_groups = [[r, (r + 6) % 643, (r + 12) % 643] for r in range(rsi_start, rsi_end + 1, 6)]
-    if not rsi_groups:
-        rsi_groups = [[rsi_start, (rsi_start + 6) % 643, (rsi_start + 12) % 643]]
+pci_groups = [list(range(i, i + 3)) for i in range(pci_start, pci_end + 1, 3) if i + 2 <= pci_end]
+rsi_groups = [[r, (r + 6) % 643, (r + 12) % 643] for r in range(rsi_start, rsi_end + 1, 6)]
 
     unique_sites = df_input['Sitename'].unique()
     total_sites = len(unique_sites)
