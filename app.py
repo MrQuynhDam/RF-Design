@@ -3,7 +3,11 @@ import pandas as pd
 import streamlit as st
 
 from src.config import CUSTOM_CSS
-from src.data_loader import get_sample_file_bytes
+from src.data_loader import (
+    get_sample_file_bytes,
+    load_csv_file,
+    GDRIVE_DEFAULT_FILES
+)
 from src.rf_calculator import run_rf_planning
 
 # 1. Cấu hình trang & CSS
@@ -22,24 +26,24 @@ st.markdown("---")
 # 2. Thanh bên Sidebar
 with st.sidebar:
     st.header("⚙️ Cấu Hình Tham Số")
-    
+
     # Khoảng cách an toàn
     st.subheader("📏 Khoảng cách an toàn")
     pci_min_dist = st.number_input("PCI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng PCI")
     rsi_min_dist = st.number_input("RSI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng RSI")
-    
+
     st.markdown("---")
-    
+
     # Thiết lập dải PCI & RSI bằng Textbox
     st.subheader("🔢 Dải Tham Số Sử Dụng (Range)")
-    
+
     st.markdown("**Dải PCI Range:**")
     col_pci1, col_pci2 = st.columns(2)
     with col_pci1:
         pci_min_str = st.text_input("PCI Min", value="0", help="Giá trị PCI bắt đầu")
     with col_pci2:
         pci_max_str = st.text_input("PCI Max", value="449", help="Giá trị PCI kết thúc")
-        
+
     st.markdown("**Dải RSI Range:**")
     col_rsi1, col_rsi2 = st.columns(2)
     with col_rsi1:
@@ -48,7 +52,7 @@ with st.sidebar:
         rsi_max_str = st.text_input("RSI Max", value="642", help="Giá trị RSI kết thúc")
 
     st.markdown("---")
-    
+
     # Ràng buộc Modulo
     st.subheader("🛡️ Ràng buộc Modulo")
     mod3_factor = st.slider("Bảo vệ Mod3 (% PCI Range)", min_value=10, max_value=100, value=40, step=5) / 100.0
@@ -60,8 +64,8 @@ col_left, col_right = st.columns([1, 2], gap="medium")
 with col_left:
     st.markdown('<div class="section-title">📥 1. Download Sample Files</div>', unsafe_allow_html=True)
     sample_files = {
-        "RIMS_Sample.csv": "File thông tin Trạm RIM hiện hữu",
-        "Config_Sample.csv": "File cấu hình Cell hiện hữu (TAC/PCI/RSI)",
+        "RIMS.csv": "File thông tin Trạm RIM hiện hữu (Mặc định Google Drive)",
+        "Config.csv": "File cấu hình Cell hiện hữu (Mặc định Google Drive)",
         "Input_Sample.csv": "File danh sách Site mới cần quy hoạch"
     }
 
@@ -83,11 +87,11 @@ with col_right:
     st.markdown('<div class="section-title">📤 2. Upload input files</div>', unsafe_allow_html=True)
     u1, u2, u3 = st.columns(3)
     with u1:
-        rim_file = st.file_uploader("1. RIMS.csv", type=["csv"], key="rim")
+        rim_file = st.file_uploader("1. RIMS.csv (Tùy chọn - Mặc định Drive)", type=["csv"], key="rim")
     with u2:
-        config_file = st.file_uploader("2. Config.csv", type=["csv"], key="config")
+        config_file = st.file_uploader("2. Config.csv (Tùy chọn - Mặc định Drive)", type=["csv"], key="config")
     with u3:
-        input_file = st.file_uploader("3. Input.csv", type=["csv"], key="input")
+        input_file = st.file_uploader("3. Input.csv (Bắt buộc)", type=["csv"], key="input")
 
 st.markdown("---")
 col_btn, _ = st.columns([1, 2])
@@ -96,7 +100,6 @@ with col_btn:
 
 # 4. Thực thi tính toán quy hoạch RF
 if execute_btn:
-    # Validation dữ liệu đầu vào từ Textboxes
     try:
         pci_start = int(pci_min_str.strip())
         pci_end = int(pci_max_str.strip())
@@ -108,22 +111,40 @@ if execute_btn:
         valid_range = False
 
     if valid_range:
-        if not rim_file or not config_file or not input_file:
-            st.error("⚠️ Vui lòng tải đủ 3 file CSV đầu vào (hoặc chọn dùng file mẫu)!")
-        elif pci_start >= pci_end:
-            st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
-        elif rsi_start >= rsi_end:
-            st.error("⚠️ Giá trị 'RSI Min' phải nhỏ hơn 'RSI Max'!")
-        else:
-            status_box = st.status("⚙️ Đang tiến hành phân bổ tham số RF...", expanded=True)
-            progress_bar = st.progress(0)
+        status_box = st.status("⚙️ Đang tiến hành phân bổ tham số RF...", expanded=True)
+        progress_bar = st.progress(0)
 
-            try:
-                status_box.write("Đang tải dữ liệu...")
-                df_rim = pd.read_csv(rim_file)
-                df_config = pd.read_csv(config_file)
-                df_input = pd.read_csv(input_file)
+        try:
+            status_box.write("Đang tải dữ liệu RIMS, Config và Input...")
 
+            # 1. Đọc RIMS: Upload > Google Drive
+            df_rim = load_csv_file(
+                uploaded_file=rim_file,
+                default_gdrive_id=GDRIVE_DEFAULT_FILES["RIMS.csv"],
+                local_path="data/RIMS_Sample.csv"
+            )
+
+            # 2. Đọc Config: Upload > Google Drive
+            df_config = load_csv_file(
+                uploaded_file=config_file,
+                default_gdrive_id=GDRIVE_DEFAULT_FILES["Config.csv"],
+                local_path="data/Config_Sample.csv"
+            )
+
+            # 3. Đọc Input: Upload > Sample
+            df_input = load_csv_file(
+                uploaded_file=input_file,
+                local_path="data/Input_Sample.csv"
+            )
+
+            if df_rim is None or df_config is None or df_input is None:
+                status_box.update(label="❌ Thiếu dữ liệu đầu vào!", state="error")
+                st.error("⚠️ Không thể đọc file dữ liệu. Vui lòng kiểm tra kết nối Google Drive hoặc upload file!")
+            elif pci_start >= pci_end:
+                st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
+            elif rsi_start >= rsi_end:
+                st.error("⚠️ Giá trị 'RSI Min' phải nhỏ hơn 'RSI Max'!")
+            else:
                 df_output, logs_text, elapsed_time = run_rf_planning(
                     df_rim, df_config, df_input,
                     pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
@@ -137,16 +158,16 @@ if execute_btn:
                 st.session_state["logs"] = logs_text
                 st.session_state["exec_time"] = elapsed_time
 
-            except Exception as e:
-                status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
-                st.error(f"Chi tiết lỗi: {str(e)}")
+        except Exception as e:
+            status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
+            st.error(f"Chi tiết lỗi: {str(e)}")
 
 # 5. Hiển thị Dashboard Kết quả
 if "output_df" in st.session_state:
     st.markdown("### 📊 Kết Quả Quy Hoạch")
     df_out = st.session_state["output_df"]
     exec_t = st.session_state.get("exec_time", 0)
-    
+
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Site Mới", f"{df_out['Sitename'].nunique()}")
     m2.metric("Tổng Cell Phân Bổ", f"{len(df_out)}")
