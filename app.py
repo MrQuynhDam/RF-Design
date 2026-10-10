@@ -43,7 +43,7 @@ with st.sidebar:
     with col_rsi1:
         rsi_start = st.number_input("RSI Min", min_value=0, max_value=642, value=0, step=6, help="Giá trị RSI bắt đầu")
     with col_rsi2:
-        rsi_end = st.number_input("RSI Max", min_value=0, max_value=642, value=630, step=6, help="Giá trị RSI kết thúc")
+        rsi_end = st.number_input("RSI Max", min_value=0, max_value=834, value=642, step=6, help="Giá trị RSI kết thúc")
 
     st.markdown("---")
     
