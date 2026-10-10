@@ -16,7 +16,6 @@ def extract_sector_id(cell_name: str, site_name: str = "") -> str:
     """
     clean_cell = str(cell_name).strip()
 
-    # Tìm chữ số cuối cùng trước suffix '-DTP' hoặc ở cuối tên cell
     match = re.search(r'(\d)(?:-[A-Za-z0-9]+)?$', clean_cell)
     if match:
         return match.group(1)
@@ -193,15 +192,17 @@ def run_rf_planning(
     rsi_start, rsi_end = rsi_range
 
     pci_start = (pci_start // 3) * 3
-    rsi_start = (rsi_start // 6) * 6
+    # Mốc bắt đầu RSI chia hết cho 18 (bội số của 9 và bước nhảy 18 giữa các trạm)
+    rsi_start = (rsi_start // 18) * 18
 
     pci_groups = [list(range(i, i + 3)) for i in range(pci_start, pci_end + 1, 3) if i + 2 <= pci_end]
     if not pci_groups:
         pci_groups = [[pci_start, pci_start + 1, pci_start + 2]]
 
-    rsi_groups = [[r, (r + 6) % 643, (r + 12) % 643] for r in range(rsi_start, rsi_end + 1, 6)]
+    # Mỗi nhóm RSI cho 3 sector: [r, r + 6, r + 12] (không dùng modulo làm lệch giá trị)
+    rsi_groups = [[r, r + 6, r + 12] for r in range(rsi_start, rsi_end + 1, 18) if r + 12 <= rsi_end]
     if not rsi_groups:
-        rsi_groups = [[rsi_start, (rsi_start + 6) % 643, (rsi_start + 12) % 643]]
+        rsi_groups = [[rsi_start, rsi_start + 6, rsi_start + 12]]
 
     unique_sites = df_input['Sitename'].unique()
     total_sites = len(unique_sites)
@@ -222,7 +223,6 @@ def run_rf_planning(
         site_lon = site_cells['Lon'].iloc[0]
         site_cart = latlon_to_cartesian(site_lat, site_lon)[0]
 
-        # Lấy TAC từ trạm hiện hữu gần nhất
         _, nearest_idx = kdtree_existing.query(site_cart)
         assigned_tac = df_existing.iloc[nearest_idx]['TAC']
 
@@ -294,7 +294,7 @@ def run_rf_planning(
         if selected_rsi_group is None:
             selected_rsi_group = best_fallback_rsi_group
 
-        # 4. Tính toán Tham số RF (TAC, Azimuth, Tilt, PCI, RSI) cho từng SECTOR VẬT LÝ
+        # 4. Tính toán Tham số RF cho từng SECTOR VẬT LÝ
         sector_params = {}
         site_assigned_azs = []
 
@@ -321,7 +321,6 @@ def run_rf_planning(
             calculated_total_tilt = max(3.0, raw_total_tilt)
             e_tilt = max(0, int(round(calculated_total_tilt - m_tilt)))
             
-            # Đảm bảo TotalTilt = M-Tilt + E-Tilt >= 3°
             actual_total_tilt = int(m_tilt + e_tilt)
             if actual_total_tilt < 3:
                 actual_total_tilt = 3
@@ -343,7 +342,7 @@ def run_rf_planning(
             assigned_pci_list = np.vstack([assigned_pci_list, [*site_cart, pci_val]])
             assigned_rsi_list = np.vstack([assigned_rsi_list, [*site_cart, rsi_val]])
 
-        # 5. Đồng bộ TAC, PCI, RSI, Azimuth, M-Tilt, E-Tilt, TotalTilt cho TẤT CẢ các Cell thuộc cùng Sector/Site
+        # 5. Đồng bộ tham số cho TẤT CẢ các Cell thuộc cùng Sector
         for _, cell_row_s in site_cells.iterrows():
             cell_row = cell_row_s.to_dict()
             sec_id = cell_row.pop('Sector_ID', None)
