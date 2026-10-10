@@ -139,7 +139,7 @@ def run_rf_planning(
     df_rim, df_config, df_input, 
     pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor, 
     status_box, progress_bar,
-    pci_range=(0, 449), rsi_range=(0, 630)
+    pci_range=(0, 449), rsi_range=(0, 642)
 ):
     """Hàm chạy tiến trình quy hoạch RF toàn cục với dải PCI và RSI tùy chỉnh."""
     start_time = time.time()
