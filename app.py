@@ -23,31 +23,33 @@ st.markdown("---")
 with st.sidebar:
     st.header("⚙️ Cấu Hình Tham Số")
     
-    # --- KHOẢNG CÁCH TÁI SỬ DỤNG ---
+    # Khoảng cách an toàn
     st.subheader("📏 Khoảng cách an toàn")
     pci_min_dist = st.number_input("PCI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng PCI")
     rsi_min_dist = st.number_input("RSI Min Range (m)", min_value=1000, value=8000, step=500, help="Khoảng cách tối thiểu tái sử dụng RSI")
     
     st.markdown("---")
     
-    # --- BỔ SUNG: TÙY CHỌN DẢI PCI & RSI ---
-    st.subheader("🔢 Dải Tham Số Sử Dụng")
+    # Thiết lập dải PCI & RSI bằng Textbox
+    st.subheader("🔢 Dải Tham Số Sử Dụng (Range)")
     
+    st.markdown("**Dải PCI Range:**")
     col_pci1, col_pci2 = st.columns(2)
     with col_pci1:
-        pci_start = st.number_input("PCI Min", min_value=0, max_value=503, value=0, step=3, help="Giá trị PCI bắt đầu")
+        pci_min_str = st.text_input("PCI Min", value="0", help="Giá trị PCI bắt đầu")
     with col_pci2:
-        pci_end = st.number_input("PCI Max", min_value=0, max_value=503, value=449, step=3, help="Giá trị PCI kết thúc")
+        pci_max_str = st.text_input("PCI Max", value="449", help="Giá trị PCI kết thúc")
         
+    st.markdown("**Dải RSI Range:**")
     col_rsi1, col_rsi2 = st.columns(2)
     with col_rsi1:
-        rsi_start = st.number_input("RSI Min", min_value=0, max_value=642, value=0, step=6, help="Giá trị RSI bắt đầu")
+        rsi_min_str = st.text_input("RSI Min", value="0", help="Giá trị RSI bắt đầu")
     with col_rsi2:
-        rsi_end = st.number_input("RSI Max", min_value=0, max_value=834, value=642, step=6, help="Giá trị RSI kết thúc")
+        rsi_max_str = st.text_input("RSI Max", value="642", help="Giá trị RSI kết thúc")
 
     st.markdown("---")
     
-    # --- RÀNG BUỘC MODULO ---
+    # Ràng buộc Modulo
     st.subheader("🛡️ Ràng buộc Modulo")
     mod3_factor = st.slider("Bảo vệ Mod3 (% PCI Range)", min_value=10, max_value=100, value=40, step=5) / 100.0
     mod6_factor = st.slider("Bảo vệ Mod6 (% PCI Range)", min_value=10, max_value=100, value=25, step=5) / 100.0
@@ -94,38 +96,50 @@ with col_btn:
 
 # 4. Thực thi tính toán quy hoạch RF
 if execute_btn:
-    if not rim_file or not config_file or not input_file:
-        st.error("⚠️ Vui lòng tải đủ 3 file CSV đầu vào (hoặc chọn dùng file mẫu)!")
-    elif pci_start >= pci_end:
-        st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
-    elif rsi_start >= rsi_end:
-        st.error("⚠️ Giá trị 'RSI Min' phải nhỏ hơn 'RSI Max'!")
-    else:
-        status_box = st.status("⚙️ Đang tiến hành phân bổ tham số RF...", expanded=True)
-        progress_bar = st.progress(0)
+    # Validation dữ liệu đầu vào từ Textboxes
+    try:
+        pci_start = int(pci_min_str.strip())
+        pci_end = int(pci_max_str.strip())
+        rsi_start = int(rsi_min_str.strip())
+        rsi_end = int(rsi_max_str.strip())
+        valid_range = True
+    except ValueError:
+        st.error("⚠️ Giá trị dải PCI và RSI nhập vào textbox phải là số nguyên!")
+        valid_range = False
 
-        try:
-            status_box.write("Đang tải dữ liệu...")
-            df_rim = pd.read_csv(rim_file)
-            df_config = pd.read_csv(config_file)
-            df_input = pd.read_csv(input_file)
+    if valid_range:
+        if not rim_file or not config_file or not input_file:
+            st.error("⚠️ Vui lòng tải đủ 3 file CSV đầu vào (hoặc chọn dùng file mẫu)!")
+        elif pci_start >= pci_end:
+            st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
+        elif rsi_start >= rsi_end:
+            st.error("⚠️ Giá trị 'RSI Min' phải nhỏ hơn 'RSI Max'!")
+        else:
+            status_box = st.status("⚙️ Đang tiến hành phân bổ tham số RF...", expanded=True)
+            progress_bar = st.progress(0)
 
-            df_output, logs_text, elapsed_time = run_rf_planning(
-                df_rim, df_config, df_input,
-                pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
-                status_box, progress_bar,
-                pci_range=(int(pci_start), int(pci_end)),
-                rsi_range=(int(rsi_start), int(rsi_end))
-            )
+            try:
+                status_box.write("Đang tải dữ liệu...")
+                df_rim = pd.read_csv(rim_file)
+                df_config = pd.read_csv(config_file)
+                df_input = pd.read_csv(input_file)
 
-            status_box.update(label="✅ Hoàn tất quy hoạch thành công!", state="complete", expanded=False)
-            st.session_state["output_df"] = df_output
-            st.session_state["logs"] = logs_text
-            st.session_state["exec_time"] = elapsed_time
+                df_output, logs_text, elapsed_time = run_rf_planning(
+                    df_rim, df_config, df_input,
+                    pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
+                    status_box, progress_bar,
+                    pci_range=(pci_start, pci_end),
+                    rsi_range=(rsi_start, rsi_end)
+                )
 
-        except Exception as e:
-            status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
-            st.error(f"Chi tiết lỗi: {str(e)}")
+                status_box.update(label="✅ Hoàn tất quy hoạch thành công!", state="complete", expanded=False)
+                st.session_state["output_df"] = df_output
+                st.session_state["logs"] = logs_text
+                st.session_state["exec_time"] = elapsed_time
+
+            except Exception as e:
+                status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
+                st.error(f"Chi tiết lỗi: {str(e)}")
 
 # 5. Hiển thị Dashboard Kết quả
 if "output_df" in st.session_state:
