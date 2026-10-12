@@ -101,7 +101,7 @@ with col_right:
 st.markdown("---")
 col_btn, _ = st.columns([1, 2])
 with col_btn:
-    execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH RF", type="primary", use_container_width=True)
+    execute_btn = st.button("🚀 Start...", type="primary", use_container_width=True)
 
 # 5. Thực thi tính toán quy hoạch RF
 if execute_btn:
