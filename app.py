@@ -109,9 +109,9 @@ st.markdown('<div class="section-title">⚡ 3. Quick RF Design (Quy hoạch nhan
 st.caption("Nhập hoặc **Copy-Paste từ Excel** trực tiếp vào bảng bên dưới (Hệ thống sẽ tự động lấy đúng **3 dòng đầu tiên** để quy hoạch):")
 
 default_quick_df = pd.DataFrame([
-    {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M11-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
-    {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M12-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
-    {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M13-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
+    {"Sitename": "4G-XLD001M-DTP", "Cellname": "4G-XLD001M11-DTP", "Lat": 10.462074, "Lon": 105.633935, "Height": 10, "Antenna Type": "Antenna XPSLD"},
+    {"Sitename": "4G-XLD001M-DTP", "Cellname": "4G-XLD001M12-DTP", "Lat": 10.462074, "Lon": 105.633935, "Height": 10, "Antenna Type": "Antenna XPSLD"},
+    {"Sitename": "4G-XLD001M-DTP", "Cellname": "4G-XLD001M13-DTP", "Lat": 10.462074, "Lon": 105.633935, "Height": 10, "Antenna Type": "Antenna XPSLD"},
 ])
 
 quick_edited_df = st.data_editor(
