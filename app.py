@@ -63,7 +63,7 @@ with st.sidebar:
 rims_date = get_gdrive_file_modified_date(GDRIVE_DEFAULT_FILES["RIMS.csv"])
 config_date = get_gdrive_file_modified_date(GDRIVE_DEFAULT_FILES["Config.csv"])
 
-# 4. Khu vực Input & Download Sample (Batch Processing)
+# 4. Khu vực Input & Download Sample
 col_left, col_right = st.columns([1, 2], gap="medium")
 
 with col_left:
@@ -89,24 +89,24 @@ with col_left:
             st.button(f"❌ Không tìm thấy {fname}", disabled=True, use_container_width=True)
 
 with col_right:
-    st.markdown('<div class="section-title">📤 2. Upload input files (Quy hoạch hàng loạt)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📤 2. Upload Input Files</div>', unsafe_allow_html=True)
     u1, u2, u3 = st.columns(3)
     with u1:
         rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định ngày {rims_date})]", type=["csv"], key="rim")
     with u2:
         config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định ngày {config_date})]", type=["csv"], key="config")        
     with u3:
-        input_file = st.file_uploader("3. Input.csv :red[(Upload danh sách site cần thiết kế)]", type=["csv"], key="input")
+        input_file = st.file_uploader("3. Input.csv :red[(File danh sách site cần quy hoạch)]", type=["csv"], key="input")
 
 col_btn, _ = st.columns([1, 2])
 with col_btn:
-    execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH RF (FILE CSV)", type="primary", use_container_width=True)
+    execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH FILE INPUT", type="primary", use_container_width=True)
 
 st.markdown("---")
 
-# 5. Khu vực Quick RF Design (Nhập tay thiết kế nhanh 1 trạm)
-st.markdown("### ⚡ Quick RF Design (Nhập tay thiết kế nhanh 1 trạm - Tối đa 3 Cell)")
-st.caption("Nhập thông tin trực tiếp vào bảng bên dưới để thiết kế nhanh 1 site mới mà không cần upload file Input.csv:")
+# 5. Khu vực Quick RF Design
+st.markdown('<div class="section-title">⚡ 3. Quick RF Design (Quy hoạch nhanh 1 trạm)</div>', unsafe_allow_html=True)
+st.caption("Nhập/chỉnh sửa trực tiếp thông tin các cell của 1 trạm (Tối đa 3 Cell) vào bảng bên dưới:")
 
 default_quick_df = pd.DataFrame([
     {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M11-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
@@ -131,16 +131,18 @@ quick_edited_df = st.data_editor(
 
 col_quick_btn, _ = st.columns([1, 2])
 with col_quick_btn:
-    quick_execute_btn = st.button("⚡ TÍNH TOÁN QUICK RF DESIGN", type="primary", use_container_width=True)
+    execute_quick_btn = st.button("⚡ TÍNH TOÁN QUICK RF DESIGN", type="primary", use_container_width=True)
 
+st.markdown("---")
 
-# Hàm hỗ trợ chạy quy hoạch chung
-def process_planning(df_input_data):
+# Hàm xử lý chung cho cả 2 nút bấm
+def process_rf_planning(df_input_data):
     try:
         pci_start = int(pci_min_str.strip())
         pci_end = int(pci_max_str.strip())
         rsi_start = int(rsi_min_str.strip())
         rsi_end = int(rsi_max_str.strip())
+        valid_range = True
     except ValueError:
         st.error("⚠️ Giá trị dải PCI và RSI nhập vào textbox phải là số nguyên!")
         return
@@ -156,7 +158,7 @@ def process_planning(df_input_data):
     progress_bar = st.progress(0)
 
     try:
-        status_box.write("Đang tải dữ liệu RIMS và Config...")
+        status_box.write("Đang tải dữ liệu RIMS, Config và Input...")
 
         # 1. Đọc RIMS
         df_rim = load_csv_file(
@@ -174,43 +176,45 @@ def process_planning(df_input_data):
 
         if df_rim is None or df_config is None or df_input_data is None or len(df_input_data) == 0:
             status_box.update(label="❌ Thiếu dữ liệu đầu vào!", state="error")
-            st.error("⚠️ Không thể đọc dữ liệu Input. Vui lòng kiểm tra lại file upload hoặc bảng Quick RF Design!")
-        else:
-            df_output, logs_text, elapsed_time = run_rf_planning(
-                df_rim, df_config, df_input_data,
-                pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
-                status_box, progress_bar,
-                pci_range=(pci_start, pci_end),
-                rsi_range=(rsi_start, rsi_end)
-            )
+            st.error("⚠️ Không thể đọc file dữ liệu. Vui lòng kiểm tra kết nối Google Drive, file upload hoặc bảng Quick RF Design!")
+            return
 
-            status_box.update(label="✅ Hoàn tất quy hoạch thành công!", state="complete", expanded=False)
-            st.session_state["output_df"] = df_output
-            st.session_state["logs"] = logs_text
-            st.session_state["exec_time"] = elapsed_time
+        df_output, logs_text, elapsed_time = run_rf_planning(
+            df_rim, df_config, df_input_data,
+            pci_min_dist, rsi_min_dist, mod3_factor, mod6_factor,
+            status_box, progress_bar,
+            pci_range=(pci_start, pci_end),
+            rsi_range=(rsi_start, rsi_end)
+        )
+
+        status_box.update(label="✅ Hoàn tất quy hoạch thành công!", state="complete", expanded=False)
+        st.session_state["output_df"] = df_output
+        st.session_state["logs"] = logs_text
+        st.session_state["exec_time"] = elapsed_time
 
     except Exception as e:
         status_box.update(label="❌ Có lỗi xảy ra trong quá trình xử lý!", state="error")
         st.error(f"Chi tiết lỗi: {str(e)}")
 
-
-# 6. Xử lý sự kiện click nút
+# Xử lý sự kiện click nút Upload
 if execute_btn:
     df_in = load_csv_file(
         uploaded_file=input_file,
         local_path="data/Input_Sample.csv"
     )
-    process_planning(df_in)
+    if df_in is None:
+        input_bytes = get_sample_file_bytes("Input_Sample.csv")
+        if input_bytes:
+            df_in = pd.read_csv(io.BytesIO(input_bytes))
+    process_rf_planning(df_in)
 
-if quick_execute_btn:
-    # Lấy tối đa 3 dòng từ bảng chỉnh sửa Quick RF Design
-    df_quick_in = quick_edited_df.iloc[:3].copy()
-    df_quick_in = df_quick_in.dropna(subset=['Sitename', 'Cellname', 'Lat', 'Lon'])
-    process_planning(df_quick_in)
+# Xử lý sự kiện click nút Quick RF Design
+if execute_quick_btn:
+    df_quick_in = quick_edited_df.iloc[:3].copy().dropna(subset=['Sitename', 'Cellname', 'Lat', 'Lon'])
+    process_rf_planning(df_quick_in)
 
-# 7. Hiển thị Dashboard Kết quả
-if "output_df" in st.session_state:
-    st.markdown("---")
+# 6. Hiển thị Dashboard Kết quả & Logs
+if "output_df" in st.session_state and st.session_state["output_df"] is not None:
     st.markdown("### 📊 Kết Quả Quy Hoạch")
     df_out = st.session_state["output_df"]
     exec_t = st.session_state.get("exec_time", 0)
@@ -222,3 +226,18 @@ if "output_df" in st.session_state:
     m4.metric("Thời Gian Xử Lý", f"{exec_t}s")
 
     tab_data, tab_log = st.tabs(["📋 Danh Sách Kết Quả (Output Data)", "📜 Nhật Ký Xử Lý (Logs)"])
+
+    with tab_data:
+        st.dataframe(df_out, use_container_width=True, height=380)
+        csv_buffer = io.StringIO()
+        df_out.to_csv(csv_buffer, index=False)
+        st.download_button(
+            label="📥 Tải Về Kết Quả Quy Hoạch (Output_RF_Design.csv)",
+            type="primary",
+            data=csv_buffer.getvalue().encode('utf-8-sig'),
+            file_name="Output_RF_Design.csv",
+            mime="text/csv"
+        )
+
+    with tab_log:
+        st.code(st.session_state.get("logs", ""), language="text")
