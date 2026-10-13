@@ -104,9 +104,9 @@ with col_btn:
 
 st.markdown("---")
 
-# 5. Khu vực Quick RF Design (Cố định đúng 3 dòng)
+# 5. Khu vực Quick RF Design (Cho phép Copy-Paste nhiều dòng, tự động lấy 3 dòng đầu)
 st.markdown('<div class="section-title">⚡ 3. Quick RF Design (Quy hoạch nhanh 1 trạm - Tối đa 3 Cell)</div>', unsafe_allow_html=True)
-st.caption("Nhập/chỉnh sửa trực tiếp thông tin cho 1 trạm (Được cố định đúng 3 dòng tương ứng 3 cell):")
+st.caption("Nhập hoặc **Copy-Paste từ Excel** trực tiếp vào bảng bên dưới (Hệ thống sẽ tự động lấy đúng **3 dòng đầu tiên** để quy hoạch):")
 
 default_quick_df = pd.DataFrame([
     {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M11-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
@@ -116,7 +116,7 @@ default_quick_df = pd.DataFrame([
 
 quick_edited_df = st.data_editor(
     default_quick_df,
-    num_rows="fixed",  # Cố định số dòng là 3
+    num_rows="dynamic",  # Cho phép dán/nhập nhiều dòng từ Excel
     column_config={
         "Sitename": st.column_config.TextColumn("Sitename", required=True),
         "Cellname": st.column_config.TextColumn("Cellname", required=True),
@@ -210,9 +210,8 @@ if execute_btn:
 
 # Xử lý sự kiện click nút Quick RF Design
 if execute_quick_btn:
-    # Đảm bảo giới hạn đúng 3 dòng đầu tiên
     if len(quick_edited_df) > 3:
-        st.toast("⚠️ Đã tự động giới hạn dữ liệu về đúng 3 dòng đầu tiên.", icon="ℹ️")
+        st.toast("⚠️ Bảng Quick Design chỉ nhận 3 dòng đầu tiên (1 trạm 3 sector). Đã tự động lọc 3 dòng đầu!", icon="✂️")
     df_quick_in = quick_edited_df.iloc[:3].copy().dropna(subset=['Sitename', 'Cellname', 'Lat', 'Lon'])
     process_rf_planning(df_quick_in)
 
