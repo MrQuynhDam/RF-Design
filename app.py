@@ -100,7 +100,7 @@ with col_right:
 
 col_btn, _ = st.columns([1, 2])
 with col_btn:
-    execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH FILE INPUT", type="primary", use_container_width=True)
+    execute_btn = st.button("🚀 START RF DESIGN MULTI eNB (FILE INPUT)", type="primary", use_container_width=True)
 
 st.markdown("---")
 
@@ -131,7 +131,7 @@ quick_edited_df = st.data_editor(
 
 col_quick_btn, _ = st.columns([1, 2])
 with col_quick_btn:
-    execute_quick_btn = st.button("⚡ TÍNH TOÁN QUICK RF DESIGN", type="primary", use_container_width=True)
+    execute_quick_btn = st.button("⚡ QUICK RF DESIGN", type="primary", use_container_width=True)
 
 st.markdown("---")
 
