@@ -89,19 +89,50 @@ with col_left:
             st.button(f"❌ Không tìm thấy {fname}", disabled=True, use_container_width=True)
 
 with col_right:
-    st.markdown('<div class="section-title">📤 2. Upload input files</div>', unsafe_allow_html=True)
-    u1, u2, u3 = st.columns(3)
+    st.markdown('<div class="section-title">📤 2. Upload / Nhập liệu đầu vào</div>', unsafe_allow_html=True)
+
+    input_mode = st.radio(
+        "Chọn chế độ nhập liệu Input:",
+        ["📁 Upload File Input.csv", "⚡ Quick RF Design (Nhập tay tối đa 3 Cell)"],
+        horizontal=True
+    )
+
+    u1, u2 = st.columns(2)
     with u1:
-        rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định sử dụng dữ liệu RIMs ngày {rims_date})]", type=["csv"], key="rim")
+        rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định ngày {rims_date})]", type=["csv"], key="rim")
     with u2:
-        config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định sử dụng dữ liệu Config ngày {config_date})]", type=["csv"], key="config")        
-    with u3:
-        input_file = st.file_uploader("3. Input.csv :red[(Upload thông tin các site/cell cần thiết kế RF)]", type=["csv"], key="input")
+        config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định ngày {config_date})]", type=["csv"], key="config")
+
+    if input_mode == "📁 Upload File Input.csv":
+        input_file = st.file_uploader("3. Input.csv :red[(Upload file danh sách Site/Cell cần thiết kế)]", type=["csv"], key="input")
+    else:
+        st.caption("⚡ **Quick RF Design**: Chỉnh sửa thông tin 1 trạm trực tiếp bên dưới (Tối đa 3 cell/dòng):")
+
+        default_quick_df = pd.DataFrame([
+            {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M11-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
+            {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M12-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
+            {"Sitename": "4G-CLA997M-DTP", "Cellname": "4G-CLA997M13-DTP", "Lat": 10.545524, "Lon": 105.774482, "Height": 40, "Antenna Type": "Antenna ROS"},
+        ])
+
+        quick_edited_df = st.data_editor(
+            default_quick_df,
+            num_rows="dynamic",
+            column_config={
+                "Sitename": st.column_config.TextColumn("Sitename", required=True),
+                "Cellname": st.column_config.TextColumn("Cellname", required=True),
+                "Lat": st.column_config.NumberColumn("Lat", format="%.6f", required=True),
+                "Lon": st.column_config.NumberColumn("Lon", format="%.6f", required=True),
+                "Height": st.column_config.NumberColumn("Height (m)", min_value=1, max_value=150, default=30),
+                "Antenna Type": st.column_config.TextColumn("Antenna Type")
+            },
+            use_container_width=True,
+            key="quick_rf_editor"
+        )
 
 st.markdown("---")
 col_btn, _ = st.columns([1, 2])
 with col_btn:
-    execute_btn = st.button("🚀 Start...", type="primary", use_container_width=True)
+    execute_btn = st.button("🚀 BẮT ĐẦU QUY HOẠCH RF", type="primary", use_container_width=True)
 
 # 5. Thực thi tính toán quy hoạch RF
 if execute_btn:
@@ -136,15 +167,22 @@ if execute_btn:
                 local_path="data/Config_Sample.csv"
             )
 
-            # 3. Đọc Input: Upload > Sample
-            df_input = load_csv_file(
-                uploaded_file=input_file,
-                local_path="data/Input_Sample.csv"
-            )
+            # 3. Đọc Input: Upload CSV hoặc Quick RF Design
+            if input_mode == "📁 Upload File Input.csv":
+                df_input = load_csv_file(
+                    uploaded_file=input_file,
+                    local_path="data/Input_Sample.csv"
+                )
+            else:
+                # Lấy dữ liệu từ bảng nhập liệu nhanh và ép giới hạn tối đa 3 dòng
+                df_input = quick_edited_df.iloc[:3].copy()
+                df_input = df_input.dropna(subset=['Sitename', 'Cellname', 'Lat', 'Lon'])
+                if len(df_input) == 0:
+                    df_input = None
 
             if df_rim is None or df_config is None or df_input is None:
                 status_box.update(label="❌ Thiếu dữ liệu đầu vào!", state="error")
-                st.error("⚠️ Không thể đọc file dữ liệu. Vui lòng kiểm tra kết nối Google Drive hoặc upload file!")
+                st.error("⚠️ Không thể đọc dữ liệu Input. Vui lòng kiểm tra file upload hoặc bảng Quick RF Design!")
             elif pci_start >= pci_end:
                 st.error("⚠️ Giá trị 'PCI Min' phải nhỏ hơn 'PCI Max'!")
             elif rsi_start >= rsi_end:
