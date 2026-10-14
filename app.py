@@ -69,8 +69,8 @@ col_left, col_right = st.columns([1, 2], gap="medium")
 with col_left:
     st.markdown('<div class="section-title">📥 1. Download Sample Files</div>', unsafe_allow_html=True)
     sample_files = {
-        "RIMS.csv": f"File thông tin Trạm RIM (Mặc định ngày {rims_date})",
-        "Config.csv": f"File cấu hình Cell (Mặc định ngày {config_date})",
+        "RIMS.csv": f"File thông tin Trạm RIM (Mặc định sử dụng dữ liệu RIMS ngày {rims_date})",
+        "Config.csv": f"File cấu hình Cell (Mặc định sử dụng dữ liệu Config ngày {config_date})",
         "Input_Sample.csv": "File danh sách Site mới cần quy hoạch"
     }
 
