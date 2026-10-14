@@ -92,9 +92,9 @@ with col_right:
     st.markdown('<div class="section-title">📤 2. Upload Input Files</div>', unsafe_allow_html=True)
     u1, u2, u3 = st.columns(3)
     with u1:
-        rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định ngày {rims_date})]", type=["csv"], key="rim")
+        rim_file = st.file_uploader(f"1. RIMS.csv :yellow[(Mặc định sử dụng dữ liệu RIMS ngày {rims_date})]", type=["csv"], key="rim")
     with u2:
-        config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định ngày {config_date})]", type=["csv"], key="config")        
+        config_file = st.file_uploader(f"2. Config.csv :yellow[(Mặc định sử dụng dữ liệu Dump ngày {config_date})]", type=["csv"], key="config")        
     with u3:
         input_file = st.file_uploader("3. Input.csv :red[(File danh sách site cần quy hoạch)]", type=["csv"], key="input")
 
